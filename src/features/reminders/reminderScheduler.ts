@@ -37,8 +37,16 @@ async function broadcastWithRetry(group: string, message: string, source: 'BOT' 
 }
 
 /**
- * Fetches due reminders and broadcasts them in small batches to Telegram.
- * Batches are used to respect rate limits while keeping notifications clear.
+ * Extracts a 10-digit mobile number from a string
+ */
+function extractMobile(text: string): string | null {
+    const match = text.match(/\d{10}/);
+    return match ? match[0] : null;
+}
+
+/**
+ * Fetches due reminders and broadcasts them in grouped summaries to Telegram.
+ * Groups common tasks (Safe Custody, Pre-bookings) to avoid notification spam.
  */
 export async function processDueReminders() {
     try {
@@ -49,40 +57,105 @@ export async function processDueReminders() {
             return;
         }
 
-        const BATCH_SIZE = 5;
-        const totalBatches = Math.ceil(dueReminders.length / BATCH_SIZE);
-        logger.info(`Found ${dueReminders.length} due reminders. Pushing in ${totalBatches} batches...`);
+        logger.info(`Processing ${dueReminders.length} due reminders...`);
 
-        for (let i = 0; i < dueReminders.length; i += BATCH_SIZE) {
-            const batch = dueReminders.slice(i, i + BATCH_SIZE);
-            const currentBatchNum = Math.floor(i / BATCH_SIZE) + 1;
+        // Categorize reminders
+        const safeCustodyGroups: Record<string, string[]> = {}; // Date String -> Mobile Numbers
+        const prebookedRtpList: string[] = [];
+        const generalReminders: any[] = [];
 
-            let message = `⚠️ **Daily Task Reminder** (Batch ${currentBatchNum}/${totalBatches})\n\n`;
-            message += `You have ${batch.length} pending task(s) in this update:\n\n`;
+        dueReminders.forEach(reminder => {
+            const taskId = reminder.taskId || '';
+            const taskName = reminder.taskName || '';
 
-            batch.forEach((reminder: any, index) => {
+            if (taskId.startsWith('cocp-safecustody-')) {
                 const dueDate = reminder.dueDate instanceof admin.firestore.Timestamp 
                     ? reminder.dueDate.toDate() 
                     : new Date(reminder.dueDate);
+                const dateKey = format(dueDate, 'PPP');
+                const mobile = extractMobile(taskName);
                 
-                const formattedDate = format(dueDate, 'PPP');
-                const assignedTo = Array.isArray(reminder.assignedTo) 
-                    ? reminder.assignedTo.join(', ') 
-                    : reminder.assignedTo;
+                if (mobile) {
+                    if (!safeCustodyGroups[dateKey]) safeCustodyGroups[dateKey] = [];
+                    safeCustodyGroups[dateKey].push(mobile);
+                } else {
+                    generalReminders.push(reminder);
+                }
+            } else if (taskId.startsWith('prebooked-rtp-')) {
+                const mobile = extractMobile(taskName);
+                if (mobile) {
+                    prebookedRtpList.push(mobile);
+                } else {
+                    generalReminders.push(reminder);
+                }
+            } else {
+                generalReminders.push(reminder);
+            }
+        });
 
-                message += `${index + 1}. **${reminder.taskName}**\n`;
-                message += `   - Assigned to: ${assignedTo}\n`;
-                message += `   - Due Date: ${formattedDate}\n\n`;
+        // Construct the summary message
+        let messages: string[] = [];
+        let currentMessage = `⚠️ **Daily Task Summary**\n\n`;
+
+        // 1. Safe Custody Section
+        const dateKeys = Object.keys(safeCustodyGroups).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+        for (const dateKey of dateKeys) {
+            const mobiles = safeCustodyGroups[dateKey];
+            let section = `📅 **Safe Custody Date Arrived (${dateKey})**\n`;
+            mobiles.forEach(m => section += `• \`${m}\`\n`);
+            section += `\n`;
+
+            if ((currentMessage + section).length > 3500) {
+                messages.push(currentMessage);
+                currentMessage = section;
+            } else {
+                currentMessage += section;
+            }
+        }
+
+        // 2. Pre-booked Section
+        if (prebookedRtpList.length > 0) {
+            let section = `📅 **Pre-Booked Numbers now RTP**\n`;
+            prebookedRtpList.forEach(m => section += `• \`${m}\`\n`);
+            section += `\n`;
+
+            if ((currentMessage + section).length > 3500) {
+                messages.push(currentMessage);
+                currentMessage = section;
+            } else {
+                currentMessage += section;
+            }
+        }
+
+        // 3. General Section
+        if (generalReminders.length > 0) {
+            let section = `📅 **Other Pending Tasks**\n`;
+            generalReminders.forEach((r, idx) => {
+                const dueDate = r.dueDate instanceof admin.firestore.Timestamp ? r.dueDate.toDate() : new Date(r.dueDate);
+                const assignedTo = Array.isArray(r.assignedTo) ? r.assignedTo.join(', ') : r.assignedTo;
+                section += `${idx + 1}. **${r.taskName}**\n`;
+                section += `   - Assigned to: ${assignedTo}\n`;
+                section += `   - Due: ${format(dueDate, 'PPP')}\n\n`;
             });
 
-            message += `Please complete these tasks to dismiss notifications.`;
+            if ((currentMessage + section).length > 3500) {
+                messages.push(currentMessage);
+                currentMessage = section;
+            } else {
+                currentMessage += section;
+            }
+        }
 
-            // Broadcast to WORK_REMINDERS group with robust retry logic
-            await broadcastWithRetry('WORK_REMINDERS', message, 'BOT');
+        currentMessage += `Please check the dashboard to manage these tasks.`;
+        messages.push(currentMessage);
 
-            // Rate limit protection: wait 5 seconds between batches
-            if (i + BATCH_SIZE < dueReminders.length) {
-                await sleep(5000);
+        // Broadcast summary message(s)
+        for (let i = 0; i < messages.length; i++) {
+            const label = messages.length > 1 ? ` (Part ${i + 1}/${messages.length})` : '';
+            await broadcastWithRetry('WORK_REMINDERS', messages[i] + label, 'BOT');
+            
+            if (i < messages.length - 1) {
+                await sleep(3000); // 3s delay between summary parts
             }
         }
 

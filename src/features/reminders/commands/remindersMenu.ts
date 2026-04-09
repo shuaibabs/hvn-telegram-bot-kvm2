@@ -4,6 +4,7 @@ import { CommandRouter } from '../../../core/router/commandRouter';
 import { env } from '../../../config/env';
 import { startAddReminderFlow } from '../flows/addReminderFlow';
 import { startListRemindersFlow } from '../flows/listRemindersFlow';
+import { processDueReminders } from '../reminderScheduler';
 
 export async function remindersMenuCommand(bot: TelegramBot, chatId: number, username?: string) {
     const opts: TelegramBot.SendMessageOptions = {
@@ -29,6 +30,11 @@ export function registerRemindersFeature(router: CommandRouter) {
 
     router.register(/^START$/i, Guard.registeredOnlyCommand(bot, async (msg) => {
         await remindersMenuCommand(bot, msg.chat.id, msg.from?.username);
+    }), [env.TG_GROUP_WORK_REMINDERS || '']);
+
+    router.register(/\/(checkreminders|cr)/i, Guard.registeredOnlyCommand(bot, async (msg) => {
+        await bot.sendMessage(msg.chat.id, "🔄 *Manual Check Initiated: Checking for due reminders...*");
+        await processDueReminders();
     }), [env.TG_GROUP_WORK_REMINDERS || '']);
 
     router.registerCallback('reminders_add', Guard.registeredOnlyCallback(bot, async (query) => {

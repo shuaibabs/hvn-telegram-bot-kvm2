@@ -108,5 +108,13 @@ export class Logger {
         }
     }
 
+    public debug(message: string) {
+        try {
+            this.writeLog(message, 'DEBUG');
+        } catch (error) {
+            console.log(new Date() + ': logger/debug: Catch: ' + error + ': ' + message);
+        }
+    }
+
 }
 export const logger = new Logger();

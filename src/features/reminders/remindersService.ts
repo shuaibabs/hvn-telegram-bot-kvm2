@@ -139,3 +139,29 @@ export async function markReminderAsDone(id: string, note?: string) {
         throw error;
     }
 }
+
+export async function getDueReminders() {
+    try {
+        // Fetch all pending reminders
+        const snapshot = await db.collection('reminders').where('status', '==', 'Pending').get();
+        const pendingReminders = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Reminder));
+        
+        // Filter those that are due today or in the past
+        const dueReminders = pendingReminders.filter(r => {
+            const dueDate = r.dueDate instanceof admin.firestore.Timestamp ? r.dueDate.toDate() : new Date(r.dueDate as any);
+            return isToday(dueDate) || isPast(dueDate);
+        });
+
+        // Sort by due date
+        dueReminders.sort((a: any, b: any) => {
+            const timeA = a.dueDate instanceof admin.firestore.Timestamp ? a.dueDate.toMillis() : new Date(a.dueDate as any).getTime();
+            const timeB = b.dueDate instanceof admin.firestore.Timestamp ? b.dueDate.toMillis() : new Date(b.dueDate as any).getTime();
+            return timeA - timeB;
+        });
+
+        return dueReminders;
+    } catch (error: any) {
+        logger.error(`Error in getDueReminders: ${error.message}`);
+        throw error;
+    }
+}

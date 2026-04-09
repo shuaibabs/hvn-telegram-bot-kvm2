@@ -1,6 +1,7 @@
 import { initializeBot } from './core/bot/bot';
 import { startServer } from './core/server/server';
 import { logger } from './core/logger/logger';
+import { startReminderScheduler } from './features/reminders/reminderScheduler';
 
 // Global error handlers to prevent process exit on unhandled rejections
 process.on('unhandledRejection', (reason: any, promise) => {
@@ -23,6 +24,9 @@ async function main() {
         logger.info("Starting the Telegram Server...");
         await startServer(bot);
         logger.info("Server is now running.");
+
+        // Start Periodic Tasks
+        startReminderScheduler();
 
     } catch (error: any) {
         logger.error("Failed to start the bot or server: " + error.message);

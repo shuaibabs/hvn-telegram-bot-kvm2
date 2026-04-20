@@ -18,6 +18,7 @@ type SearchSession = {
     type?: 'Advanced' | 'MustContains';
     criteria: PrebookSearchCriteria;
     currentSetting?: keyof PrebookSearchCriteria;
+    page: number;
 };
 
 const cancelBtn = { text: '❌ Cancel', callback_data: 'pb_search_cancel' };
@@ -30,13 +31,16 @@ const criteriaLabels: Record<string, string> = {
     notContain: 'Not Contain',
     onlyContain: 'Only Contain',
     total: 'Total (Sum)',
-    sum: 'Sum (Digital Root)'
+    sum: 'Sum (Digital Root)',
+    minPrice: 'Min Sale Price',
+    maxPrice: 'Max Sale Price'
 };
 
 export async function startSearchPrebookFlow(bot: TelegramBot, chatId: number) {
     setSession(chatId, 'searchPrebook', {
         stage: 'SELECT_TYPE',
-        criteria: {}
+        criteria: {},
+        page: 0
     });
 
     await bot.sendMessage(chatId, "🔍 *Search Pre-bookings*\n\nChoose search type:", {
@@ -53,7 +57,7 @@ export async function startSearchPrebookFlow(bot: TelegramBot, chatId: number) {
 
 function getCriteriaMenu(criteria: PrebookSearchCriteria) {
     const rows = [];
-    const keys: (keyof PrebookSearchCriteria)[] = ['startWith', 'anywhere', 'endWith', 'mustContain', 'notContain', 'onlyContain', 'total', 'sum'];
+    const keys: (keyof PrebookSearchCriteria)[] = ['startWith', 'anywhere', 'endWith', 'mustContain', 'notContain', 'onlyContain', 'total', 'sum', 'minPrice', 'maxPrice'];
 
     for (const key of keys) {
         const val = criteria[key] || 'Not Set';
@@ -144,8 +148,22 @@ export function registerSearchPrebookFlow(router: CommandRouter) {
         const session = getSession(chatId, 'searchPrebook') as SearchSession | undefined;
         if (!session) return;
 
+        session.page = 0;
+        setSession(chatId, 'searchPrebook', session);
         await performSearch(bot, chatId, session.criteria, query.from.username);
-        clearSession(chatId, 'searchPrebook');
+    });
+
+    router.registerCallback(/^pb_search_page_/, async (query) => {
+        const chatId = query.message!.chat.id;
+        const session = getSession(chatId, 'searchPrebook') as SearchSession | undefined;
+        if (!session) return;
+
+        const page = parseInt(query.data!.split('_').pop()!);
+        session.page = page;
+        setSession(chatId, 'searchPrebook', session);
+
+        await bot.deleteMessage(chatId, query.message!.message_id).catch(() => {});
+        await performSearch(bot, chatId, session.criteria, query.from.username, page);
     });
 
     router.registerCallback('pb_search_cancel', async (query) => {
@@ -154,7 +172,7 @@ export function registerSearchPrebookFlow(router: CommandRouter) {
     });
 }
 
-async function performSearch(bot: TelegramBot, chatId: number, criteria: PrebookSearchCriteria, username?: string) {
+async function performSearch(bot: TelegramBot, chatId: number, criteria: PrebookSearchCriteria, username?: string, page: number = 0) {
     try {
         const isUserAdmin = await isAdmin(username);
         const profile = await getUserProfile(username);
@@ -171,6 +189,10 @@ async function performSearch(bot: TelegramBot, chatId: number, criteria: Prebook
             await bot.sendMessage(chatId, "🔍 No pre-booked numbers found matching your criteria.");
         } else {
             const count = results.length;
+            const PAGE_SIZE = 10;
+            const totalPages = Math.ceil(count / PAGE_SIZE);
+            const offset = page * PAGE_SIZE;
+
             const activeCriteria = Object.entries(criteria)
                 .filter(([_, v]) => v)
                 .map(([k, v]) => `${criteriaLabels[k] || k}: ${v}`)
@@ -178,21 +200,30 @@ async function performSearch(bot: TelegramBot, chatId: number, criteria: Prebook
 
             let text = `🔍 *Pre-booking Search Results (${count})*\n`;
             if (activeCriteria) text += `🎯 *Filters:* \`${activeCriteria}\`\n`;
+            text += `_Page ${page + 1} of ${totalPages}_\n`;
             text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-            const displayResults = results.slice(0, 15);
+            const displayResults = results.slice(offset, offset + PAGE_SIZE);
             displayResults.forEach((pb, i) => {
-                text += `${i + 1}. \`${pb.mobile}\` | ${formatToDDMMYYYY(pb.preBookingDate)}\n`;
+                text += `${offset + i + 1}. \`${pb.mobile}\` | ${formatToDDMMYYYY(pb.preBookingDate)}\n`;
                 text += `   └ Type: ${pb.originalNumberData.numberType}\n`;
             });
 
-            if (count > 15) {
-                text += `...and ${count - 15} more.`;
-            }
-
             text += `\n━━━━━━━━━━━━━━━━━━━━`;
 
-            await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+            const inline_keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+            const navButtons: TelegramBot.InlineKeyboardButton[] = [];
+
+            if (page > 0) navButtons.push({ text: '⬅️ Back', callback_data: `pb_search_page_${page - 1}` });
+            if (offset + PAGE_SIZE < count) navButtons.push({ text: 'Next ➡️', callback_data: `pb_search_page_${page + 1}` });
+
+            if (navButtons.length > 0) inline_keyboard.push(navButtons);
+            inline_keyboard.push([{ text: '❌ Close', callback_data: 'pb_search_cancel' }]);
+
+            await bot.sendMessage(chatId, text, { 
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard }
+            });
         }
     } catch (error: any) {
         logger.error(`Error in performSearch (Prebook): ${error.message}`);

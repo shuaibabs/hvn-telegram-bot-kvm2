@@ -12,6 +12,8 @@ export type PrebookSearchCriteria = {
     onlyContain?: string;
     total?: string;
     sum?: string;
+    minPrice?: string;
+    maxPrice?: string;
 };
 
 /**
@@ -45,7 +47,7 @@ export const searchPrebookingNumbers = async (criteria: PrebookSearchCriteria, e
         const snapshot = await query.get();
         let prebookings = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as PreBookingRecord));
 
-        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum } = criteria;
+        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice } = criteria;
 
         return prebookings.filter((pb: PreBookingRecord) => {
             const mobile = pb.mobile;
@@ -74,6 +76,9 @@ export const searchPrebookingNumbers = async (criteria: PrebookSearchCriteria, e
             }
 
             if (sum && pb.sum.toString() !== sum) return false;
+
+            if (minPrice && Number(pb.originalNumberData.salePrice) < Number(minPrice)) return false;
+            if (maxPrice && Number(pb.originalNumberData.salePrice) > Number(maxPrice)) return false;
 
             return true;
         });

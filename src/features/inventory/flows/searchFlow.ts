@@ -16,6 +16,7 @@ type SearchSession = {
     type?: 'Advanced' | 'MustContains';
     criteria: AdvancedSearchCriteria;
     currentSetting?: keyof AdvancedSearchCriteria;
+    page: number;
 };
 
 const cancelBtn = { text: '❌ Cancel', callback_data: 'search_cancel' };
@@ -30,13 +31,16 @@ const criteriaLabels: Record<string, string> = {
     total: 'Total (Sum)',
     sum: 'Sum (Digital Root)',
     maxContain: 'Max Contain',
-    ownershipType: 'Ownership'
+    ownershipType: 'Ownership',
+    minPrice: 'Min Sale Price',
+    maxPrice: 'Max Sale Price'
 };
 
 export async function startSearchFlow(bot: TelegramBot, chatId: number) {
     setSession(chatId, 'searchNumbers', {
         stage: 'SELECT_TYPE',
-        criteria: {}
+        criteria: {},
+        page: 0
     });
 
     await bot.sendMessage(chatId, "🔍 *Search Inventory*\n\nChoose search type:", {
@@ -53,7 +57,10 @@ export async function startSearchFlow(bot: TelegramBot, chatId: number) {
 
 function getCriteriaMenu(criteria: AdvancedSearchCriteria) {
     const rows = [];
-    const keys: (keyof AdvancedSearchCriteria)[] = ['startWith', 'anywhere', 'endWith', 'mustContain', 'notContain', 'onlyContain', 'total', 'sum', 'maxContain', 'ownershipType'];
+    const keys: (keyof AdvancedSearchCriteria)[] = [
+        'startWith', 'anywhere', 'endWith', 'mustContain', 'notContain', 'onlyContain', 
+        'total', 'sum', 'maxContain', 'ownershipType', 'minPrice', 'maxPrice'
+    ];
 
     for (const key of keys) {
         const val = criteria[key] || 'Not Set';
@@ -174,8 +181,22 @@ export function registerSearchFlow(router: CommandRouter) {
         const session = getSession(chatId, 'searchNumbers') as SearchSession | undefined;
         if (!session) return;
 
+        session.page = 0;
+        setSession(chatId, 'searchNumbers', session);
         await performSearch(bot, chatId, session.criteria);
-        clearSession(chatId, 'searchNumbers');
+    });
+
+    router.registerCallback(/^search_page_/, async (query) => {
+        const chatId = query.message!.chat.id;
+        const session = getSession(chatId, 'searchNumbers') as SearchSession | undefined;
+        if (!session) return;
+
+        const page = parseInt(query.data!.split('_').pop()!);
+        session.page = page;
+        setSession(chatId, 'searchNumbers', session);
+
+        await bot.deleteMessage(chatId, query.message!.message_id).catch(() => {});
+        await performSearch(bot, chatId, session.criteria, page);
     });
 
     router.registerCallback('search_cancel', async (query) => {
@@ -184,13 +205,16 @@ export function registerSearchFlow(router: CommandRouter) {
     });
 }
 
-async function performSearch(bot: TelegramBot, chatId: number, criteria: AdvancedSearchCriteria) {
+async function performSearch(bot: TelegramBot, chatId: number, criteria: AdvancedSearchCriteria, page: number = 0) {
     try {
         const results = await advancedSearchNumbers(criteria);
         if (results.length === 0) {
             await bot.sendMessage(chatId, "🔍 No numbers found matching your criteria.");
         } else {
             const count = results.length;
+            const PAGE_SIZE = 10;
+            const totalPages = Math.ceil(count / PAGE_SIZE);
+            const offset = page * PAGE_SIZE;
 
             // Generate criteria summary
             const activeCriteria = Object.entries(criteria)
@@ -200,25 +224,33 @@ async function performSearch(bot: TelegramBot, chatId: number, criteria: Advance
 
             let text = `🔍 *Search Results (${count})*\n`;
             if (activeCriteria) text += `🎯 *Filters:* \`${activeCriteria}\`\n`;
+            text += `_Page ${page + 1} of ${totalPages}_\n`;
             text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-            // Limit to top 15 for message size constraints (more details per item now)
-            const displayResults = results.slice(0, 15);
+            const displayResults = results.slice(offset, offset + PAGE_SIZE);
             displayResults.forEach((num, i) => {
-                text += `${i + 1}. \`${num.mobile}\`\n`;
+                text += `${offset + i + 1}. \`${num.mobile}\`\n`;
                 text += `   ├ Status: *${num.status}*\n`;
                 text += `   ├ Type: ${num.numberType}\n`;
                 text += `   ├ Sale: ₹${num.salePrice}\n`;
-                text += `   └ Sum: ${num.sum} | Loc: ${num.currentLocation || 'N/A'}\n\n`;
+                text += `   └ Sum: ${num.sum}\n\n`;
             });
 
-            if (count > 15) {
-                text += `...and ${count - 15} more. Use more specific filters to narrow down.`;
-            }
+            text += `━━━━━━━━━━━━━━━━━━━━`;
 
-            text += `\n━━━━━━━━━━━━━━━━━━━━`;
+            const inline_keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+            const navButtons: TelegramBot.InlineKeyboardButton[] = [];
 
-            await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+            if (page > 0) navButtons.push({ text: '⬅️ Back', callback_data: `search_page_${page - 1}` });
+            if (offset + PAGE_SIZE < count) navButtons.push({ text: 'Next ➡️', callback_data: `search_page_${page + 1}` });
+
+            if (navButtons.length > 0) inline_keyboard.push(navButtons);
+            inline_keyboard.push([{ text: '❌ Close', callback_data: 'search_cancel' }]);
+
+            await bot.sendMessage(chatId, text, { 
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard }
+            });
         }
     } catch (error: any) {
         logger.error(`Error in search: ${error.message}`);

@@ -67,9 +67,28 @@ export function registerListLocationsFlow(router: CommandRouter) {
 
         const location = query.data?.replace('loc_val_', '');
         session.filters.location = location;
+        session.page = 0;
+        setSession(chatId, 'listLocations', session);
         
-        await performList(bot, chatId, session.filters, query.from.username);
-        clearSession(chatId, 'listLocations');
+        await performList(bot, chatId, session.filters, query.from.username, 0);
+    });
+
+    router.registerCallback(/^loc_list_page_/, async (query) => {
+        const chatId = query.message!.chat.id;
+        const session = getSession(chatId, 'listLocations');
+        if (!session) return;
+
+        const page = parseInt(query.data!.split('_').pop()!);
+        session.page = page;
+        setSession(chatId, 'listLocations', session);
+
+        await bot.deleteMessage(chatId, query.message!.message_id).catch(() => {});
+        await performList(bot, chatId, session.filters, query.from.username, page);
+    });
+
+    router.registerCallback('loc_list_close', async (query) => {
+        clearSession(query.message!.chat.id, 'listLocations');
+        await bot.deleteMessage(query.message!.chat.id, query.message!.message_id).catch(() => {});
     });
 
     router.registerCallback('loc_list_cancel', async (query) => {
@@ -78,7 +97,7 @@ export function registerListLocationsFlow(router: CommandRouter) {
     });
 }
 
-async function performList(bot: TelegramBot, chatId: number, filters: any, username?: string) {
+async function performList(bot: TelegramBot, chatId: number, filters: any, username?: string, page: number = 0) {
     try {
         const isUserAdmin = await isAdmin(username);
         const profile = await getUserProfile(username);
@@ -89,18 +108,35 @@ async function performList(bot: TelegramBot, chatId: number, filters: any, usern
             await bot.sendMessage(chatId, "🔍 No SIMs found matching your filters.");
         } else {
             const count = results.length;
+            const PAGE_SIZE = 10;
+            const totalPages = Math.ceil(count / PAGE_SIZE);
+            const offset = page * PAGE_SIZE;
+
             let text = `📍 *SIM Locations (${count})*\n`;
             text += `Type: ${filters.type === 'all' ? 'All' : filters.type} | Location: ${filters.location === 'all' ? 'All' : filters.location}\n`;
+            text += `_Page ${page + 1} of ${totalPages}_\n`;
             text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-            results.slice(0, 15).forEach((num: any, i: number) => {
-                text += `${i + 1}. \`${num.mobile}\` | ${num.currentLocation} (${num.locationType})\n`;
+            const displayResults = results.slice(offset, offset + PAGE_SIZE);
+            displayResults.forEach((num: any, i: number) => {
+                text += `${offset + i + 1}. \`${num.mobile}\` | ${num.currentLocation} (${num.locationType})\n`;
             });
 
-            if (count > 15) text += `\n...and ${count - 15} more.`;
             text += `\n━━━━━━━━━━━━━━━━━━━━`;
 
-            await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+            const inline_keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+            const navButtons: TelegramBot.InlineKeyboardButton[] = [];
+
+            if (page > 0) navButtons.push({ text: '⬅️ Back', callback_data: `loc_list_page_${page - 1}` });
+            if (offset + PAGE_SIZE < count) navButtons.push({ text: 'Next ➡️', callback_data: `loc_list_page_${page + 1}` });
+
+            if (navButtons.length > 0) inline_keyboard.push(navButtons);
+            inline_keyboard.push([{ text: '❌ Close', callback_data: 'loc_list_close' }]);
+
+            await bot.sendMessage(chatId, text, { 
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard }
+            });
         }
     } catch (error: any) {
         logger.error(`Error in performListLocations: ${error.message}`);

@@ -18,6 +18,7 @@ type SearchSession = {
     type?: 'Advanced' | 'MustContains';
     criteria: any;
     currentSetting?: string;
+    page: number;
 };
 
 const cancelBtn = { text: '❌ Cancel', callback_data: 'postpaid_search_cancel' };
@@ -30,7 +31,9 @@ const criteriaLabels: Record<string, string> = {
     notContain: 'Not Contain',
     onlyContain: 'Only Contain',
     total: 'Total (Sum)',
-    sum: 'Sum (Digital Root)'
+    sum: 'Sum (Digital Root)',
+    minPrice: 'Min Sale Price',
+    maxPrice: 'Max Sale Price'
 };
 
 export async function startSearchPostpaidFlow(bot: TelegramBot, chatId: number, username?: string) {
@@ -43,7 +46,8 @@ export async function startSearchPostpaidFlow(bot: TelegramBot, chatId: number, 
 
     setSession(chatId, 'searchPostpaid', {
         stage: 'SELECT_TYPE',
-        criteria: {}
+        criteria: {},
+        page: 0
     });
 
     await bot.sendMessage(chatId, "🔍 *Search Postpaid Records*\n\nChoose search type:", {
@@ -60,7 +64,7 @@ export async function startSearchPostpaidFlow(bot: TelegramBot, chatId: number, 
 
 function getCriteriaMenu(criteria: any) {
     const rows = [];
-    const keys = ['startWith', 'anywhere', 'endWith', 'mustContain', 'notContain', 'onlyContain', 'total', 'sum'];
+    const keys = ['startWith', 'anywhere', 'endWith', 'mustContain', 'notContain', 'onlyContain', 'total', 'sum', 'minPrice', 'maxPrice'];
 
     for (const key of keys) {
         const val = criteria[key] || 'Not Set';
@@ -151,8 +155,22 @@ export function registerSearchPostpaidFlow(router: CommandRouter) {
         const session = getSession(chatId, 'searchPostpaid') as SearchSession | undefined;
         if (!session) return;
 
+        session.page = 0;
+        setSession(chatId, 'searchPostpaid', session);
         await performSearch(bot, chatId, session.criteria, query.from.username);
-        clearSession(chatId, 'searchPostpaid');
+    });
+
+    router.registerCallback(/^post_search_page_/, async (query) => {
+        const chatId = query.message!.chat.id;
+        const session = getSession(chatId, 'searchPostpaid') as SearchSession | undefined;
+        if (!session) return;
+
+        const page = parseInt(query.data!.split('_').pop()!);
+        session.page = page;
+        setSession(chatId, 'searchPostpaid', session);
+
+        await bot.deleteMessage(chatId, query.message!.message_id).catch(() => {});
+        await performSearch(bot, chatId, session.criteria, query.from.username, page);
     });
 
     router.registerCallback('postpaid_search_cancel', async (query) => {
@@ -161,7 +179,7 @@ export function registerSearchPostpaidFlow(router: CommandRouter) {
     });
 }
 
-async function performSearch(bot: TelegramBot, chatId: number, criteria: any, username?: string) {
+async function performSearch(bot: TelegramBot, chatId: number, criteria: any, username?: string, page: number = 0) {
     try {
         const isUserAdmin = await isAdmin(username);
         const profile = await getUserProfile(username);
@@ -178,22 +196,35 @@ async function performSearch(bot: TelegramBot, chatId: number, criteria: any, us
             await bot.sendMessage(chatId, "🔍 No postpaid numbers found matching your criteria.");
         } else {
             const count = results.length;
+            const PAGE_SIZE = 10;
+            const totalPages = Math.ceil(count / PAGE_SIZE);
+            const offset = page * PAGE_SIZE;
+
             let text = `🔍 *Postpaid Search Results (${count})*\n`;
+            text += `_Page ${page + 1} of ${totalPages}_\n`;
             text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-            const displayResults = results.slice(0, 15);
+            const displayResults = results.slice(offset, offset + PAGE_SIZE);
             displayResults.forEach((num, i) => {
-                text += `${i + 1}. \`${num.mobile}\` | ${num.status}\n`;
+                text += `${offset + i + 1}. \`${num.mobile}\` | ${num.status}\n`;
                 if (num.billDate) text += `   └ Bill Date: ${formatToDDMMYYYY(num.billDate)}\n`;
             });
 
-            if (count > 15) {
-                text += `...and ${count - 15} more.`;
-            }
-
             text += `\n━━━━━━━━━━━━━━━━━━━━`;
 
-            await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+            const inline_keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+            const navButtons: TelegramBot.InlineKeyboardButton[] = [];
+
+            if (page > 0) navButtons.push({ text: '⬅️ Back', callback_data: `post_search_page_${page - 1}` });
+            if (offset + PAGE_SIZE < count) navButtons.push({ text: 'Next ➡️', callback_data: `post_search_page_${page + 1}` });
+
+            if (navButtons.length > 0) inline_keyboard.push(navButtons);
+            inline_keyboard.push([{ text: '❌ Close', callback_data: 'postpaid_search_cancel' }]);
+
+            await bot.sendMessage(chatId, text, { 
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard }
+            });
         }
     } catch (error: any) {
         logger.error(`Error in performSearchPostpaid: ${error.message}`);

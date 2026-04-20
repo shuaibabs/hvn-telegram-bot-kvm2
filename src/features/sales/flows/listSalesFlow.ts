@@ -1,5 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { CommandRouter } from '../../../core/router/commandRouter';
+import { getSession, setSession, clearSession } from '../../../core/bot/sessionManager';
 import { getSalesNumbers } from '../salesService';
 import { getUserProfile, isAdmin } from '../../../core/auth/permissions';
 import { logger } from '../../../core/logger/logger';
@@ -22,29 +23,65 @@ export async function startListSalesFlow(bot: TelegramBot, chatId: number, usern
             return;
         }
 
-        let text = `📋 *Sales Records (${results.length})*\n`;
-        text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-        // Limit to top 20 for message size constraints
-        const list = results.slice(0, 20);
-        list.forEach((sale, i) => {
-            text += `${i + 1}. \`${sale.mobile}\` | ₹${sale.salePrice}\n`;
-            text += `   └ Sold to: ${sale.soldTo}\n`;
-        });
-
-        if (results.length > 20) {
-            text += `\n...and ${results.length - 20} more. Use search for specific numbers.`;
-        }
-
-        text += `\n━━━━━━━━━━━━━━━━━━━━`;
-
-        await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+        setSession(chatId, 'listSales', { results, page: 0, employeeName });
+        await showSalesPage(bot, chatId, 0, results);
     } catch (error: any) {
         logger.error(`Error in listSalesFlow: ${error.message}`);
         await bot.sendMessage(chatId, `❌ Error: ${error.message}`);
     }
 }
 
+async function showSalesPage(bot: TelegramBot, chatId: number, page: number, results: any[]) {
+    const PAGE_SIZE = 10;
+    const count = results.length;
+    const totalPages = Math.ceil(count / PAGE_SIZE);
+    const offset = page * PAGE_SIZE;
+
+    let text = `📋 *Sales Records (${count})*\n`;
+    text += `_Page ${page + 1} of ${totalPages}_\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    const list = results.slice(offset, offset + PAGE_SIZE);
+    list.forEach((sale, i) => {
+        text += `${offset + i + 1}. \`${sale.mobile}\` | ₹${sale.salePrice}\n`;
+        text += `   └ Sold to: ${sale.soldTo}\n\n`;
+    });
+
+    text += `━━━━━━━━━━━━━━━━━━━━`;
+
+    const inline_keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+    const navButtons: TelegramBot.InlineKeyboardButton[] = [];
+
+    if (page > 0) navButtons.push({ text: '⬅️ Back', callback_data: `sales_list_page_${page - 1}` });
+    if (offset + PAGE_SIZE < count) navButtons.push({ text: 'Next ➡️', callback_data: `sales_list_page_${page + 1}` });
+
+    if (navButtons.length > 0) inline_keyboard.push(navButtons);
+    inline_keyboard.push([{ text: '❌ Close', callback_data: 'sales_list_close' }]);
+
+    await bot.sendMessage(chatId, text, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard }
+    });
+}
+
 export function registerListSalesFlow(router: CommandRouter) {
-    // No specific callbacks needed if it's just a direct call from menu
+    const bot = router.bot;
+
+    router.registerCallback(/^sales_list_page_/, async (query) => {
+        const chatId = query.message!.chat.id;
+        const session = getSession(chatId, 'listSales');
+        if (!session) return;
+
+        const page = parseInt(query.data!.split('_').pop()!);
+        session.page = page;
+        setSession(chatId, 'listSales', session);
+
+        await bot.deleteMessage(chatId, query.message!.message_id).catch(() => {});
+        await showSalesPage(bot, chatId, page, session.results);
+    });
+
+    router.registerCallback('sales_list_close', async (query) => {
+        clearSession(query.message!.chat.id, 'listSales');
+        await bot.deleteMessage(query.message!.chat.id, query.message!.message_id).catch(() => {});
+    });
 }

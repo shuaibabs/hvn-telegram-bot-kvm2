@@ -23,6 +23,8 @@ export type SalesSearchCriteria = {
     onlyContain?: string;
     total?: string;
     sum?: string;
+    minPrice?: string;
+    maxPrice?: string;
 };
 
 /**
@@ -56,7 +58,7 @@ export const searchSalesNumbers = async (criteria: SalesSearchCriteria, employee
         const snapshot = await query.get();
         let sales = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as SaleRecord));
 
-        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum } = criteria;
+        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice } = criteria;
 
         return sales.filter((sale: SaleRecord) => {
             const mobile = sale.mobile;
@@ -85,6 +87,9 @@ export const searchSalesNumbers = async (criteria: SalesSearchCriteria, employee
             }
 
             if (sum && sale.sum.toString() !== sum) return false;
+
+            if (minPrice && Number(sale.salePrice) < Number(minPrice)) return false;
+            if (maxPrice && Number(sale.salePrice) > Number(maxPrice)) return false;
 
             return true;
         });
@@ -209,7 +214,12 @@ export const getVendorSalesStats = async (vendorName: string) => {
                 sum: s.sum,
                 soldTo: s.soldTo,
                 salePrice: s.salePrice,
-                saleDate: (s.saleDate as any).toDate()
+                saleDate: (s.saleDate as any).toDate(),
+                originalNumberData: s.originalNumberData
+            })),
+            payments: payments.map(p => ({
+                amount: p.amount,
+                paymentDate: (p.paymentDate as any).toDate()
             }))
         };
     } catch (error: any) {

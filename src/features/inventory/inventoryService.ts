@@ -462,6 +462,8 @@ export type AdvancedSearchCriteria = {
     sum?: string;
     maxContain?: string;
     ownershipType?: 'Partnership' | 'Individual' | 'all';
+    minPrice?: string;
+    maxPrice?: string;
 };
 
 /**
@@ -510,7 +512,7 @@ export const advancedSearchNumbers = async (criteria: AdvancedSearchCriteria): P
     const snapshot = await query.get();
     let numbers = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as NumberRecord));
 
-    const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, maxContain } = criteria;
+    const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, maxContain, minPrice, maxPrice } = criteria;
 
     return numbers.filter((num: NumberRecord) => {
         if (startWith && !num.mobile.startsWith(startWith)) return false;
@@ -543,6 +545,9 @@ export const advancedSearchNumbers = async (criteria: AdvancedSearchCriteria): P
             for (const d of num.mobile) counts[d] = (counts[d] || 0) + 1;
             if (Math.max(...Object.values(counts)) > parseInt(maxContain)) return false;
         }
+
+        if (minPrice && Number(num.salePrice) < Number(minPrice)) return false;
+        if (maxPrice && Number(num.salePrice) > Number(maxPrice)) return false;
 
         return true;
     });

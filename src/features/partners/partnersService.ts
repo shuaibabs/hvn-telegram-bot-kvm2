@@ -33,7 +33,7 @@ export const searchPartnershipNumbers = async (criteria: any, employeeName?: str
         const snapshot = await query.get();
         let numbers = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as NumberRecord));
 
-        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum } = criteria;
+        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice } = criteria;
 
         return numbers.filter((num: NumberRecord) => {
             const mobile = num.mobile;
@@ -62,6 +62,9 @@ export const searchPartnershipNumbers = async (criteria: any, employeeName?: str
             }
 
             if (sum && num.sum.toString() !== sum) return false;
+
+            if (minPrice && Number(num.salePrice) < Number(minPrice)) return false;
+            if (maxPrice && Number(num.salePrice) > Number(maxPrice)) return false;
 
             return true;
         });

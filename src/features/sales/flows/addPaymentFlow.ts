@@ -13,6 +13,7 @@ const ADD_PAYMENT_STAGES = {
     AWAIT_DATE: 'AWAIT_DATE',
     AWAIT_NOTES: 'AWAIT_NOTES',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type AddPaymentSession = {
@@ -178,6 +179,20 @@ export function registerAddPaymentFlow(router: CommandRouter) {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'addPayment') as AddPaymentSession | undefined;
         if (!session || session.stage !== 'CONFIRM') return;
+
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'addPayment', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in addPayment: ' + (e as Error).message);
+        }
 
         try {
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');

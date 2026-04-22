@@ -79,6 +79,20 @@ export function registerCancelSaleFlow(router: CommandRouter) {
         const session = getSession(chatId, 'cancelSale');
         if (!session || session.stage !== 'CONFIRM_CANCEL') return;
 
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'cancelSale', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in cancelSale: ' + (e as Error).message);
+        }
+
         try {
             const profile = await getUserProfile(query.from.username);
             const performedBy = profile?.displayName || query.from.username || 'Unknown';
@@ -87,7 +101,7 @@ export function registerCancelSaleFlow(router: CommandRouter) {
 
             if (success) {
                 await bot.sendMessage(chatId, `✅ Sale for \`${session.mobile}\` has been cancelled and moved back to inventory.`, { parse_mode: 'Markdown' });
-                
+
                 // Log Activity
                 await logActivity(bot, {
                     employeeName: performedBy,

@@ -13,6 +13,7 @@ const QUICK_ADD_STAGES = {
     AWAIT_TEMPLATE: 'AWAIT_TEMPLATE',
     AWAIT_ASSIGNMENT: 'AWAIT_ASSIGNMENT',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type QuickAddSession = {
@@ -45,8 +46,8 @@ export async function startQuickAddNumberFlow(bot: TelegramBot, chatId: number) 
 
 function getTemplate(type: string): string {
     const today = formatToDDMMYYYY(new Date());
-    const common = 
-`NUMBER=9999999999
+    const common =
+        `NUMBER=9999999999
 SP=0
 PP=0
 PDATE=${today}
@@ -142,7 +143,8 @@ function parseTemplate(text: string): { data: Partial<NewNumberData> & { rawNumb
         if (!data.purchaseDate) return { data: { rawNumbers }, error: "❌ 'PDATE=' (Purchase Date) is missing or invalid format (Use DD/MM/YYYY)." };
         if (data.purchasePrice === undefined || isNaN(data.purchasePrice)) return { data: { rawNumbers }, error: "❌ 'PP=' (Purchase Price) is missing or invalid." };
 
-        return { data: { ...data, rawNumbers } };
+        const uniqueNumbers = [...new Set(rawNumbers)];
+        return { data: { ...data, rawNumbers: uniqueNumbers } };
     } catch (e: any) {
         return { data: { rawNumbers: [] }, error: `❌ Parsing error: ${e.message}` };
     }
@@ -188,11 +190,11 @@ export function registerQuickAddNumberFlow(router: CommandRouter) {
         setSession(query.message!.chat.id, 'quickAddNumber', session);
 
         const template = getTemplate(type);
-        await bot.sendMessage(query.message!.chat.id, 
+        await bot.sendMessage(query.message!.chat.id,
             `✅ Type Selected: *${type}*\n\n*Step 2:* Copy the template below, edit the details, and send it back:`, {
             parse_mode: 'Markdown',
         });
-        
+
         await bot.sendMessage(query.message!.chat.id, `\`\`\`\n${template}\n\`\`\``, {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[cancelBtn]] }
@@ -244,6 +246,20 @@ export function registerQuickAddNumberFlow(router: CommandRouter) {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'quickAddNumber') as QuickAddSession | undefined;
         if (!session || session.stage !== 'CONFIRM') return;
+
+        // Immediately update session to SAVING
+        session.stage = 'SAVING';
+        setSession(chatId, 'quickAddNumber', session);
+
+        // Edit message to remove buttons immediately
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons during quick add save: ' + (e as Error).message);
+        }
 
         try {
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');

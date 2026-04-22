@@ -8,6 +8,7 @@ import { CommandRouter } from '../../../core/router/commandRouter';
 const PREBOOK_STAGES = {
     AWAIT_NUMBERS: 'AWAIT_NUMBERS',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type PrebookSession = {
@@ -86,6 +87,20 @@ export function registerPrebookFlow(router: CommandRouter) {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'prebook') as PrebookSession | undefined;
         if (!session || session.stage !== 'CONFIRM') return;
+
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'prebook', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in prebook: ' + (e as Error).message);
+        }
 
         try {
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');

@@ -13,6 +13,7 @@ const ADD_REMINDER_STAGES = {
     AWAIT_DATE: 'AWAIT_DATE',
     AWAIT_ASSIGNMENT: 'AWAIT_ASSIGNMENT',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type AddReminderSession = {
@@ -63,7 +64,7 @@ export function registerAddReminderFlow(router: CommandRouter) {
             case 'AWAIT_DATE':
                 let dateStr = msg.text.trim().toLowerCase();
                 let date: Date | null;
-                
+
                 if (dateStr === 'today') {
                     date = new Date();
                 } else {
@@ -141,10 +142,24 @@ export function registerAddReminderFlow(router: CommandRouter) {
         const session = getSession(chatId, 'addReminder') as AddReminderSession | undefined;
         if (!session || session.stage !== 'CONFIRM') return;
 
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'addReminder', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in addReminder: ' + (e as Error).message);
+        }
+
         try {
             await addReminder(session.data);
             await bot.sendMessage(chatId, "✅ *Reminder Saved Successfully!*", { parse_mode: 'Markdown' });
-            
+
             // Log activity
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');
             await logActivity(bot, {

@@ -12,6 +12,7 @@ const ADD_DEALER_PAYMENT_STAGES = {
     AWAIT_DATE: 'AWAIT_DATE',
     AWAIT_NOTES: 'AWAIT_NOTES',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type AddDealerPaymentSession = {
@@ -177,6 +178,20 @@ export function registerAddDealerPaymentFlow(router: CommandRouter) {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'addDealerPayment') as AddDealerPaymentSession | undefined;
         if (!session || session.stage !== 'CONFIRM') return;
+
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'addDealerPayment', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in addDealerPayment: ' + (e as Error).message);
+        }
 
         try {
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');

@@ -14,6 +14,7 @@ const CREATE_STAGES = {
     AWAIT_TELEGRAM: 'AWAIT_TELEGRAM',
     AWAIT_PASSWORD: 'AWAIT_PASSWORD',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type CreateUserSession = {
@@ -211,6 +212,20 @@ async function handleConfirmation(bot: TelegramBot, callbackQuery: TelegramBot.C
     await bot.answerCallbackQuery(callbackQuery.id);
 
     if (decision === 'create_user_confirm_yes') {
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'createUser', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: callbackQuery.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in createUser: ' + (e as Error).message);
+        }
+
         try {
             const { password, ...userData } = session.newUser;
             await addUser(userData as User, password);

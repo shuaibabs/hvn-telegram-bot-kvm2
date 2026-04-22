@@ -42,14 +42,25 @@ export const addInventoryNumbers = async (
         const batch = db.batch();
         const now = Timestamp.now();
 
+        const processedMobiles = new Set<string>();
+
         for (const mobile of validNumbers) {
-            // Check for duplicates
-            const isDuplicate = await isMobileNumberDuplicate(mobile);
-            if (isDuplicate) {
+            // Check for duplicates in current batch
+            if (processedMobiles.has(mobile)) {
                 results.duplicateCount++;
                 results.duplicates.push(mobile);
                 continue;
             }
+
+            // Check for duplicates in database (across all collections)
+            const existence = await getNumberDetails(mobile);
+            if (existence.found) {
+                results.duplicateCount++;
+                results.duplicates.push(mobile);
+                continue;
+            }
+
+            processedMobiles.add(mobile);
 
             const newDocRef = numbersCollection.doc();
 

@@ -2,12 +2,14 @@ import TelegramBot from 'node-telegram-bot-api';
 import { getAllUsers, deleteUser } from '../userService';
 import { User } from '../../../shared/types/data';
 import { setSession, getSession, clearSession } from '../../../core/bot/sessionManager';
+import { logger } from '../../../core/logger/logger';
 import { logActivity } from '../../activities/activityService';
 import { escapeMarkdown } from '../../../shared/utils/telegram';
 
 const DELETE_STAGES = {
     AWAIT_USER_SELECTION: 'AWAIT_USER_SELECTION',
     AWAIT_CONFIRMATION: 'AWAIT_CONFIRMATION',
+    SAVING: 'SAVING',
 } as const;
 
 type DeleteUserSession = {
@@ -94,6 +96,20 @@ async function handleConfirmation(bot: TelegramBot, callbackQuery: TelegramBot.C
     await bot.answerCallbackQuery(callbackQuery.id);
 
     if (decision === 'delete_user_confirm_yes') {
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'deleteUser', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: callbackQuery.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in deleteUser: ' + (e as Error).message);
+        }
+
         try {
             await deleteUser(session.userId);
             const name = escapeMarkdown(session.displayName || '');

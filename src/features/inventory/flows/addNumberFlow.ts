@@ -29,6 +29,7 @@ const ADD_NUMBER_STAGES = {
     AWAIT_LOCATION_TYPE: 'AWAIT_LOCATION_TYPE',
     AWAIT_ASSIGNMENT: 'AWAIT_ASSIGNMENT',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type AddNumberSession = {
@@ -69,7 +70,8 @@ async function handleNumbersInput(bot: TelegramBot, msg: TelegramBot.Message, se
         return;
     }
 
-    session.data.rawNumbers = numbers;
+    const uniqueNumbers = [...new Set(numbers)];
+    session.data.rawNumbers = uniqueNumbers;
     session.stage = 'AWAIT_TYPE';
     setSession(msg.chat.id, 'addNumber', session);
 
@@ -145,7 +147,7 @@ export function registerAddNumberFlow(router: CommandRouter) {
                 } else {
                     bDate = parseDate(msg.text);
                 }
-                
+
                 if (!bDate) {
                     await bot.sendMessage(msg.chat.id, "❌ Invalid date format. Use DD/MM/YYYY.");
                     return;
@@ -184,7 +186,7 @@ export function registerAddNumberFlow(router: CommandRouter) {
                 } else {
                     scDate = parseDate(msg.text);
                 }
-                
+
                 if (!scDate) {
                     await bot.sendMessage(msg.chat.id, "❌ Invalid date format. Use DD/MM/YYYY.");
                     return;
@@ -219,7 +221,7 @@ export function registerAddNumberFlow(router: CommandRouter) {
                 } else {
                     pDate = parseDate(msg.text);
                 }
-                
+
                 if (!pDate) {
                     await bot.sendMessage(msg.chat.id, "❌ Invalid date format. Use DD/MM/YYYY.");
                     return;
@@ -285,7 +287,7 @@ export function registerAddNumberFlow(router: CommandRouter) {
                 } else {
                     rDate = parseDate(msg.text);
                 }
-                
+
                 if (!rDate) {
                     await bot.sendMessage(msg.chat.id, "❌ Invalid date format. Use DD/MM/YYYY.");
                     return;
@@ -545,6 +547,21 @@ export function registerAddNumberFlow(router: CommandRouter) {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'addNumber') as AddNumberSession | undefined;
         if (!session || session.stage !== 'CONFIRM') return;
+
+        // Immediately update session to SAVING to prevent concurrent executions
+        session.stage = 'SAVING';
+        setSession(chatId, 'addNumber', session);
+
+        // Edit message to remove buttons immediately
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            // Log and continue if message edit fails
+            logger.warn('Failed to remove buttons during save: ' + (e as Error).message);
+        }
 
         try {
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');

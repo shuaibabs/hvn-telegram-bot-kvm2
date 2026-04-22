@@ -74,10 +74,24 @@ export function registerEditLocationFlow(router: CommandRouter) {
     router.registerCallback(/^loc_act_/, async (query) => {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'editLocation');
-        if (!session) return;
+        if (!session || session.stage !== 'SELECT_ACTION') return;
 
         const action = query.data?.replace('loc_act_', '');
         if (action === 'checkin') {
+            // Lock session
+            session.stage = 'SAVING';
+            setSession(chatId, 'editLocation', session);
+
+            // Remove buttons
+            try {
+                await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                    chat_id: chatId,
+                    message_id: query.message!.message_id
+                });
+            } catch (e) {
+                logger.warn('Failed to remove buttons in editLocation (checkin): ' + (e as Error).message);
+            }
+
             try {
                 const profile = await getUserProfile(query.from.username);
                 const isUserAdmin = await isAdmin(query.from.username);
@@ -87,7 +101,7 @@ export function registerEditLocationFlow(router: CommandRouter) {
                 const result = await checkInNumber(session.mobile, performer, employeeName);
                 if (result) {
                     await bot.sendMessage(chatId, `✅ *Success!*\n\nSIM number \`${session.mobile}\` has been checked in successfully.`, { parse_mode: 'Markdown' });
-                    
+
                     // Log Activity
                     await logActivity(bot, {
                         employeeName: performer,
@@ -114,7 +128,21 @@ export function registerEditLocationFlow(router: CommandRouter) {
     router.registerCallback(/^loc_new_type_/, async (query) => {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'editLocation');
-        if (!session) return;
+        if (!session || session.stage !== 'SELECT_NEW_TYPE') return;
+
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'editLocation', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in editLocation (update): ' + (e as Error).message);
+        }
 
         const type = query.data?.replace('loc_new_type_', '');
         try {
@@ -126,7 +154,7 @@ export function registerEditLocationFlow(router: CommandRouter) {
             const result = await updateLocation(session.mobile, { locationType: type!, currentLocation: session.newLoc }, performer, employeeName);
             if (result) {
                 await bot.sendMessage(chatId, `✅ *Location Updated!*\n\nSIM \`${session.mobile}\` is now at *${session.newLoc}* (${type}).`, { parse_mode: 'Markdown' });
-                
+
                 // Log Activity
                 await logActivity(bot, {
                     employeeName: performer,

@@ -87,7 +87,7 @@ export function registerAddDealerFlow(router: CommandRouter) {
         if (!session || session.stage !== 'SELECT_DEALER') return;
 
         const selection = query.data?.replace('dealer_sel_', '');
-        
+
         if (selection === 'new') {
             session.stage = 'AWAIT_NEW_DEALER_NAME';
             setSession(chatId, 'addDealer', session);
@@ -103,14 +103,28 @@ export function registerAddDealerFlow(router: CommandRouter) {
     router.registerCallback('dealer_add_confirm', async (query) => {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'addDealer');
-        if (!session) return;
+        if (!session || session.stage !== 'CONFIRMATION') return;
+
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'addDealer', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in addDealer: ' + (e as Error).message);
+        }
 
         try {
             const profile = await getUserProfile(query.from.username);
             if (!profile?.uid) throw new Error("Could not find your user ID.");
 
             await bot.sendMessage(chatId, "⏳ Processing... Please wait.");
-            
+
             // Register dealer if new
             const allDealers = await getDealers();
             if (!allDealers.includes(session.dealerName)) {

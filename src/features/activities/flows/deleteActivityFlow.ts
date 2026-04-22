@@ -3,11 +3,13 @@ import { CommandRouter } from '../../../core/router/commandRouter';
 import { getRecentActivities, deleteActivity, logActivity } from '../activityService';
 import { setSession, getSession, clearSession } from '../../../core/bot/sessionManager';
 import { escapeMarkdown } from '../../../shared/utils/telegram';
+import { logger } from '../../../core/logger/logger';
 import { Guard } from '../../../core/auth/guard';
 
 const DELETE_ACT_STAGES = {
     AWAIT_SELECTION: 'AWAIT_SELECTION',
     AWAIT_CONFIRMATION: 'AWAIT_CONFIRMATION',
+    SAVING: 'SAVING',
 } as const;
 
 type DeleteActivitySession = {
@@ -89,6 +91,20 @@ async function handleConfirmation(bot: TelegramBot, callbackQuery: TelegramBot.C
     if (!session || session.stage !== 'AWAIT_CONFIRMATION' || !session.activityId) return;
 
     await bot.answerCallbackQuery(callbackQuery.id);
+
+    // Lock session
+    session.stage = 'SAVING';
+    setSession(chatId, 'deleteActivity', session);
+
+    // Remove buttons
+    try {
+        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+            chat_id: chatId,
+            message_id: callbackQuery.message!.message_id
+        });
+    } catch (e) {
+        logger.warn('Failed to remove buttons in deleteActivity: ' + (e as Error).message);
+    }
 
     try {
         await deleteActivity(session.activityId);

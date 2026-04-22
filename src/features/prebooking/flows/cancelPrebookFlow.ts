@@ -79,6 +79,20 @@ export function registerCancelPrebookFlow(router: CommandRouter) {
         const session = getSession(chatId, 'cancelPrebook');
         if (!session || session.stage !== 'CONFIRM_CANCEL') return;
 
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'cancelPrebook', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in cancelPrebook: ' + (e as Error).message);
+        }
+
         try {
             const profile = await getUserProfile(query.from.username);
             const performedBy = profile?.displayName || query.from.username || 'Unknown';
@@ -87,7 +101,7 @@ export function registerCancelPrebookFlow(router: CommandRouter) {
 
             if (success) {
                 await bot.sendMessage(chatId, `✅ Pre-booking for \`${session.mobile}\` has been cancelled and moved back to inventory.`, { parse_mode: 'Markdown' });
-                
+
                 // Log Activity
                 await logActivity(bot, {
                     employeeName: performedBy,

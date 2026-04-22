@@ -12,6 +12,7 @@ const MARK_AS_SOLD_STAGES = {
     AWAIT_VENDOR: 'AWAIT_VENDOR',
     AWAIT_SALE_DATE: 'AWAIT_SALE_DATE',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type MarkAsSoldSession = {
@@ -182,6 +183,20 @@ export function registerMarkAsSoldFlow(router: CommandRouter) {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'markAsSold') as MarkAsSoldSession | undefined;
         if (!session || session.stage !== 'CONFIRM') return;
+
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'markAsSold', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in markAsSold: ' + (e as Error).message);
+        }
 
         try {
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');

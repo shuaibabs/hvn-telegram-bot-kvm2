@@ -18,6 +18,7 @@ const UPDATE_STATUS_STAGES = {
     AWAIT_NEW_LOCATION: 'AWAIT_NEW_LOCATION',
     AWAIT_SALE_PRICE: 'AWAIT_SALE_PRICE',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type UpdateStatusSession = {
@@ -144,13 +145,13 @@ export function registerUpdateStatusFlow(router: CommandRouter) {
             case 'AWAIT_RTP_DATE': {
                 let dateStr = msg.text.trim().toLowerCase();
                 let rDate: Date | null;
-                
+
                 if (dateStr === 'today') {
                     rDate = new Date();
                 } else {
                     rDate = parseDate(msg.text);
                 }
- 
+
                 if (!rDate) {
                     await bot.sendMessage(chatId, "❌ Invalid date format. Use DD/MM/YYYY.");
                     return;
@@ -274,6 +275,20 @@ export function registerUpdateStatusFlow(router: CommandRouter) {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'updateStatus') as UpdateStatusSession | undefined;
         if (!session || session.stage !== 'CONFIRM') return;
+
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'updateStatus', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in updateStatus: ' + (e as Error).message);
+        }
 
         try {
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');

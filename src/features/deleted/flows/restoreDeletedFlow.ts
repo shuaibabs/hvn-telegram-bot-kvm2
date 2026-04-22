@@ -79,7 +79,21 @@ export function registerRestoreDeletedFlow(router: CommandRouter) {
     router.registerCallback('restore_confirm', async (query) => {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'restoreNumber');
-        if (!session) return;
+        if (!session || session.stage !== 'CONFIRMATION') return;
+
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'restoreNumber', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in restoreNumber: ' + (e as Error).message);
+        }
 
         try {
             const profile = await getUserProfile(query.from.username);
@@ -88,7 +102,7 @@ export function registerRestoreDeletedFlow(router: CommandRouter) {
             const result = await restoreNumber(session.recordId, performer);
             if (result) {
                 await bot.sendMessage(chatId, `✅ *Success!*\n\nNumber \`${session.mobile}\` has been restored to inventory.`, { parse_mode: 'Markdown' });
-                
+
                 // Log Activity
                 await logActivity(bot, {
                     employeeName: performer,

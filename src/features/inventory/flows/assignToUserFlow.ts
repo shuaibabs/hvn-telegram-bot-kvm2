@@ -10,6 +10,7 @@ const ASSIGN_USER_STAGES = {
     AWAIT_NUMBERS: 'AWAIT_NUMBERS',
     AWAIT_USER_SELECTION: 'AWAIT_USER_SELECTION',
     CONFIRM: 'CONFIRM',
+    SAVING: 'SAVING',
 } as const;
 
 type AssignUserSession = {
@@ -119,6 +120,20 @@ export function registerAssignToUserFlow(router: CommandRouter) {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'assignToUser') as AssignUserSession | undefined;
         if (!session || session.stage !== 'CONFIRM') return;
+
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'assignToUser', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in assignToUser: ' + (e as Error).message);
+        }
 
         try {
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');

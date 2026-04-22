@@ -11,7 +11,8 @@ const EDIT_STAGES = {
     AWAIT_MOBILE: 'AWAIT_MOBILE',
     SELECT_FIELD: 'SELECT_FIELD',
     AWAIT_DATE: 'AWAIT_DATE',
-    AWAIT_PD_BILL: 'AWAIT_PD_BILL'
+    AWAIT_PD_BILL: 'AWAIT_PD_BILL',
+    SAVING: 'SAVING'
 } as const;
 
 type EditSession = {
@@ -104,9 +105,9 @@ export function registerEditPostpaidFlow(router: CommandRouter) {
             try {
                 const creator = msg.from?.first_name + (msg.from?.last_name ? ' ' + msg.from?.last_name : '');
                 await updatePostpaidDetails(session.mobile!, { billDate: parsedDate }, creator);
- 
+
                 await bot.sendMessage(chatId, `✅ *Updated!*\n\nBill Date for \`${session.mobile}\` has been set to ${dateStr}.`, { parse_mode: 'Markdown' });
-                
+
                 // Log Activity
                 await logActivity(bot, {
                     employeeName: creator,
@@ -116,7 +117,7 @@ export function registerEditPostpaidFlow(router: CommandRouter) {
                     source: 'BOT',
                     groupName: 'POSTPAID_NUMBERS'
                 }, true);
-                
+
                 clearSession(chatId, 'postpaidEdit');
             } catch (error: any) {
                 await bot.sendMessage(chatId, `❌ Error updating date: ${error.message}`);
@@ -159,17 +160,31 @@ export function registerEditPostpaidFlow(router: CommandRouter) {
             });
         }
     });
- 
+
     router.registerCallback('postpaid_edit_date_today', async (query) => {
         const chatId = query.message!.chat.id;
         const session = getSession(chatId, 'postpaidEdit') as EditSession | undefined;
         if (!session || session.stage !== 'AWAIT_DATE') return;
 
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'postpaidEdit', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in editPostpaid (today): ' + (e as Error).message);
+        }
+
         try {
             const today = new Date();
             const dateStr = formatToDDMMYYYY(today);
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');
-            
+
             await updatePostpaidDetails(session.mobile!, { billDate: today }, creator);
             await bot.sendMessage(chatId, `✅ *Updated!*\n\nBill Date for \`${session.mobile}\` has been set to ${dateStr}.`, { parse_mode: 'Markdown' });
 
@@ -195,14 +210,28 @@ export function registerEditPostpaidFlow(router: CommandRouter) {
         const session = getSession(chatId, 'postpaidEdit') as EditSession | undefined;
         if (!session || session.stage !== 'AWAIT_PD_BILL') return;
 
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'postpaidEdit', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in editPostpaid (pd): ' + (e as Error).message);
+        }
+
         const val = query.data?.split('_').pop() as 'Yes' | 'No';
 
         try {
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');
             await updatePostpaidDetails(session.mobile!, { pdBill: val }, creator);
- 
+
             await bot.sendMessage(chatId, `✅ *Updated!*\n\nPD Bill status for \`${session.mobile}\` has been set to *${val}*.`, { parse_mode: 'Markdown' });
-            
+
             // Log Activity
             await logActivity(bot, {
                 employeeName: creator,
@@ -212,7 +241,7 @@ export function registerEditPostpaidFlow(router: CommandRouter) {
                 source: 'BOT',
                 groupName: 'POSTPAID_NUMBERS'
             }, true);
-            
+
             clearSession(chatId, 'postpaidEdit');
         } catch (error: any) {
             await bot.sendMessage(chatId, `❌ Error updating PD Bill: ${error.message}`);

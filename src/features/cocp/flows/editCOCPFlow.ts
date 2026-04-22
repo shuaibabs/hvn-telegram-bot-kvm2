@@ -9,7 +9,8 @@ import { logActivity } from '../../activities/activityService';
 
 const EDIT_STAGES = {
     AWAIT_MOBILE: 'AWAIT_MOBILE',
-    AWAIT_DATE: 'AWAIT_DATE'
+    AWAIT_DATE: 'AWAIT_DATE',
+    SAVING: 'SAVING'
 } as const;
 
 type EditSession = {
@@ -120,7 +121,7 @@ export function registerEditCOCPFlow(router: CommandRouter) {
 
             try {
                 const creator = msg.from?.first_name + (msg.from?.last_name ? ' ' + msg.from?.last_name : '');
-                
+
                 let successCount = 0;
                 for (const mobile of session.mobiles!) {
                     await updateCOCPDetails(mobile, { safeCustodyDate: parsedDate }, creator);
@@ -128,7 +129,7 @@ export function registerEditCOCPFlow(router: CommandRouter) {
                 }
 
                 await bot.sendMessage(chatId, `✅ *Updated!*\n\nSafe Custody Date for ${successCount} number(s) has been set to ${dateStr}.`, { parse_mode: 'Markdown' });
-                
+
                 // Log Activity
                 await logActivity(bot, {
                     employeeName: creator,
@@ -138,7 +139,7 @@ export function registerEditCOCPFlow(router: CommandRouter) {
                     source: 'BOT',
                     groupName: 'COCP'
                 }, true);
-                
+
                 clearSession(chatId, 'cocpEdit');
             } catch (error: any) {
                 await bot.sendMessage(chatId, `❌ Error updating date: ${error.message}`);
@@ -151,11 +152,25 @@ export function registerEditCOCPFlow(router: CommandRouter) {
         const session = getSession(chatId, 'cocpEdit') as EditSession | undefined;
         if (!session || session.stage !== 'AWAIT_DATE') return;
 
+        // Lock session
+        session.stage = 'SAVING';
+        setSession(chatId, 'cocpEdit', session);
+
+        // Remove buttons
+        try {
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+                chat_id: chatId,
+                message_id: query.message!.message_id
+            });
+        } catch (e) {
+            logger.warn('Failed to remove buttons in editCOCP (today): ' + (e as Error).message);
+        }
+
         try {
             const today = new Date();
             const dateStr = formatToDDMMYYYY(today);
             const creator = query.from.first_name + (query.from.last_name ? ' ' + query.from.last_name : '');
-            
+
             let successCount = 0;
             for (const mobile of session.mobiles!) {
                 await updateCOCPDetails(mobile, { safeCustodyDate: today }, creator);

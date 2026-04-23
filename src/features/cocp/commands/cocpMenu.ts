@@ -12,7 +12,7 @@ export const cocpMenuCommand = async (bot: TelegramBot, chatId: number | string,
         [{ text: '📋 List COCP Numbers', callback_data: 'cocp_list' }],
         [{ text: '🔍 Search COCP', callback_data: 'cocp_search' }],
         [{ text: 'ℹ️ COCP Details', callback_data: 'cocp_detail' }],
-        [{ text: '✏️ Edit Safe Custody Date', callback_data: 'cocp_edit' }]
+        [{ text: '✏️ Edit COCP Date', callback_data: 'cocp_edit' }]
     ];
 
     await bot.sendMessage(chatId, "🏢 *COCP Management Menu*\n\nWelcome! Use the buttons below to manage COCP numbers.", {

@@ -81,6 +81,7 @@ export const addInventoryNumbers = async (
                 sum: calculateDigitalRoot(mobile),
                 rtpDate: data.status === 'Non-RTP' && data.rtpDate ? Timestamp.fromDate(data.rtpDate) : null,
                 safeCustodyDate: data.numberType === 'COCP' && data.safeCustodyDate ? Timestamp.fromDate(data.safeCustodyDate) : null,
+                unsafeCustodyDate: data.numberType === 'COCP' && data.unsafeCustodyDate ? Timestamp.fromDate(data.unsafeCustodyDate) : null,
                 billDate: data.numberType === 'Postpaid' && data.billDate ? Timestamp.fromDate(data.billDate) : null,
                 assignedTo: data.assignedTo || 'Unassigned',
                 name: data.assignedTo || 'Unassigned',
@@ -97,6 +98,7 @@ export const addInventoryNumbers = async (
             if (data.numberType !== 'COCP') {
                 delete newNumber.accountName;
                 delete newNumber.safeCustodyDate;
+                delete newNumber.unsafeCustodyDate;
             }
             if (data.numberType !== 'Postpaid') {
                 delete newNumber.billDate;

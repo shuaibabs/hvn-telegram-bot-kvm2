@@ -46,6 +46,7 @@ async function showCOCPPage(bot: TelegramBot, chatId: number, page: number, resu
     list.forEach((num, i) => {
         text += `${offset + i + 1}. \`${num.mobile}\` | ${num.status}\n`;
         if (num.safeCustodyDate) text += `   └ Safe Custody: ${formatToDDMMYYYY(num.safeCustodyDate)}\n`;
+        if (num.unsafeCustodyDate) text += `   └ Unsafe Custody: ${formatToDDMMYYYY(num.unsafeCustodyDate)}\n`;
         if (num.accountName) text += `   └ Account: ${num.accountName}\n\n`;
     });
 

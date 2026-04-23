@@ -16,6 +16,7 @@ const ADD_NUMBER_STAGES = {
     AWAIT_POSTPAID_PD_BILL: 'AWAIT_POSTPAID_PD_BILL',
     AWAIT_COCP_ACCOUNT: 'AWAIT_COCP_ACCOUNT',
     AWAIT_COCP_SAFE_CUSTODY: 'AWAIT_COCP_SAFE_CUSTODY',
+    AWAIT_COCP_UNSAFE_CUSTODY: 'AWAIT_COCP_UNSAFE_CUSTODY',
     AWAIT_PURCHASE_VENDOR: 'AWAIT_PURCHASE_VENDOR',
     AWAIT_PURCHASE_DATE: 'AWAIT_PURCHASE_DATE',
     AWAIT_PURCHASE_PRICE: 'AWAIT_PURCHASE_PRICE',
@@ -192,6 +193,32 @@ export function registerAddNumberFlow(router: CommandRouter) {
                     return;
                 }
                 session.data.safeCustodyDate = scDate;
+                session.stage = 'AWAIT_COCP_UNSAFE_CUSTODY';
+                setSession(msg.chat.id, 'addNumber', session);
+                const todayUC = formatToDDMMYYYY(new Date());
+                await bot.sendMessage(msg.chat.id, `Enter Unsafe Custody Date (DD/MM/YYYY):\n(Type 'today' for ${todayUC})`, {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: `📅 Today (${todayUC})`, callback_data: 'add_num_date_uc_today' }],
+                            [cancelBtn]
+                        ]
+                    }
+                });
+                break;
+            case 'AWAIT_COCP_UNSAFE_CUSTODY':
+                let ucDateStr = msg.text.trim().toLowerCase();
+                let ucDate: Date | null;
+                if (ucDateStr === 'today') {
+                    ucDate = new Date();
+                } else {
+                    ucDate = parseDate(msg.text);
+                }
+
+                if (!ucDate) {
+                    await bot.sendMessage(msg.chat.id, "❌ Invalid date format. Use DD/MM/YYYY.");
+                    return;
+                }
+                session.data.unsafeCustodyDate = ucDate;
                 session.stage = 'AWAIT_PURCHASE_VENDOR';
                 setSession(msg.chat.id, 'addNumber', session);
                 await bot.sendMessage(msg.chat.id, "*Step 4:* Enter Purchase From (Vendor Name):", {
@@ -368,6 +395,25 @@ export function registerAddNumberFlow(router: CommandRouter) {
         if (!session || session.stage !== 'AWAIT_COCP_SAFE_CUSTODY') return;
 
         session.data.safeCustodyDate = new Date();
+        session.stage = 'AWAIT_COCP_UNSAFE_CUSTODY';
+        setSession(chatId, 'addNumber', session);
+        const todayUC = formatToDDMMYYYY(new Date());
+        await bot.sendMessage(chatId, `Enter Unsafe Custody Date (DD/MM/YYYY):\n(Type 'today' for ${todayUC})`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: `📅 Today (${todayUC})`, callback_data: 'add_num_date_uc_today' }],
+                    [cancelBtn]
+                ]
+            }
+        });
+    });
+
+    router.registerCallback('add_num_date_uc_today', async (query: TelegramBot.CallbackQuery) => {
+        const chatId = query.message!.chat.id;
+        const session = getSession(chatId, 'addNumber') as AddNumberSession | undefined;
+        if (!session || session.stage !== 'AWAIT_COCP_UNSAFE_CUSTODY') return;
+
+        session.data.unsafeCustodyDate = new Date();
         session.stage = 'AWAIT_PURCHASE_VENDOR';
         setSession(chatId, 'addNumber', session);
         await bot.sendMessage(chatId, "*Step 4:* Enter Purchase From (Vendor Name):", {
@@ -522,7 +568,7 @@ export function registerAddNumberFlow(router: CommandRouter) {
             `📱 *Numbers:* ${d.rawNumbers?.join(', ')}\n` +
             `📝 *Type:* ${d.numberType}\n` +
             (d.numberType === 'Postpaid' ? `📅 *Bill Date:* ${formatToDDMMYYYY(d.billDate)}\n📊 *PD Bill:* ${d.pdBill}\n` : '') +
-            (d.numberType === 'COCP' ? `🏢 *Account:* ${d.accountName}\n📅 *Custody Date:* ${formatToDDMMYYYY(d.safeCustodyDate)}\n` : '') +
+            (d.numberType === 'COCP' ? `🏢 *Account:* ${d.accountName}\n📅 *Safe Custody:* ${formatToDDMMYYYY(d.safeCustodyDate)}\n📅 *Unsafe Custody:* ${formatToDDMMYYYY(d.unsafeCustodyDate)}\n` : '') +
             `👤 *Ownership:* ${d.ownershipType}${d.ownershipType === 'Partnership' ? ` (Partner: ${d.partnerName})` : ''}\n` +
             `💰 *Purchase:* From ${d.purchaseFrom} on ${formatToDDMMYYYY(d.purchaseDate)} for ₹${d.purchasePrice}\n` +
             `📈 *Intended Sale:* ₹${d.salePrice}\n` +

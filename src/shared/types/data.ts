@@ -40,6 +40,7 @@ export type NumberRecord = {
   notes?: string;
   checkInDate: Timestamp | null;
   safeCustodyDate: Timestamp | null;
+  unsafeCustodyDate: Timestamp | null;
   createdBy: string; // UID of user who created it
   accountName?: string;
   ownershipType: 'Individual' | 'Partnership';
@@ -52,8 +53,8 @@ export type NumberRecord = {
 // Type for creating a new number, omitting Firestore-generated fields
 export type NewNumberData = Omit<
   NumberRecord,
-  'id' | 'srNo' | 'createdBy' | 'checkInDate' | 'purchaseDate' | 'sum' | 'safeCustodyDate' | 'billDate' | 'history' | 'rtpDate'
-> & { purchaseDate: Date; rtpDate?: Date, safeCustodyDate?: Date, billDate?: Date };
+  'id' | 'srNo' | 'createdBy' | 'checkInDate' | 'purchaseDate' | 'sum' | 'safeCustodyDate' | 'unsafeCustodyDate' | 'billDate' | 'history' | 'rtpDate'
+> & { purchaseDate: Date; rtpDate?: Date, safeCustodyDate?: Date, unsafeCustodyDate?: Date, billDate?: Date };
 
 
 export type SaleRecord = {

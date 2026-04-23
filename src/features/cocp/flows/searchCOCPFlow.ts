@@ -207,6 +207,7 @@ async function performSearch(bot: TelegramBot, chatId: number, criteria: any, us
             displayResults.forEach((num, i) => {
                 text += `${offset + i + 1}. \`${num.mobile}\` | ${num.status}\n`;
                 if (num.safeCustodyDate) text += `   └ Safe Custody: ${formatToDDMMYYYY(num.safeCustodyDate)}\n`;
+                if (num.unsafeCustodyDate) text += `   └ Unsafe Custody: ${formatToDDMMYYYY(num.unsafeCustodyDate)}\n`;
             });
 
             text += `\n━━━━━━━━━━━━━━━━━━━━`;

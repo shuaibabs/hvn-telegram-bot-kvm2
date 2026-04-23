@@ -58,6 +58,7 @@ export function registerDetailCOCPFlow(router: CommandRouter) {
                 let text = `🏢 *COCP Details: ${mobile}*\n`;
                 text += `━━━━━━━━━━━━━━━━━━━━\n`;
                 text += `📅 *Safe Custody Date:* ${formatToDDMMYYYY(num.safeCustodyDate)}\n`;
+                text += `⚠️ *Unsafe Custody Date:* ${formatToDDMMYYYY(num.unsafeCustodyDate)}\n`;
                 text += `👤 *Account Name:* ${num.accountName || 'N/A'}\n`;
                 text += `💰 *Purchase Price:* ₹${num.purchasePrice}\n`;
                 text += `📍 *Current Location:* ${num.currentLocation}\n`;

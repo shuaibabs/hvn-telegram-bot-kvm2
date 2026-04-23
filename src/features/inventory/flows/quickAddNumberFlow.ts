@@ -63,7 +63,7 @@ UPLOADSTS=Pending   (Done)`;
     } else if (type === 'Postpaid') {
         return `TYPE=Postpaid:${today}:NO  (Yes)\n${common}`;
     } else if (type === 'COCP') {
-        return `TYPE=COCP:AccountName:${today}\n${common}`;
+        return `TYPE=COCP:AccountName:${today}:${today}\n${common}`;
     }
     return common;
 }
@@ -103,6 +103,7 @@ function parseTemplate(text: string): { data: Partial<NewNumberData> & { rawNumb
                     } else if (data.numberType === 'COCP') {
                         data.accountName = typeParts[1];
                         data.safeCustodyDate = parseFromDDMMYYYY(typeParts[2]) || undefined;
+                        data.unsafeCustodyDate = parseFromDDMMYYYY(typeParts[3]) || undefined;
                     }
                     break;
                 case 'PDATE':
@@ -222,7 +223,7 @@ export function registerQuickAddNumberFlow(router: CommandRouter) {
             `📱 *Numbers:* ${d.rawNumbers?.join(', ')}\n` +
             `📝 *Type:* ${d.numberType}\n` +
             (d.numberType === 'Postpaid' ? `📅 *Bill Date:* ${formatToDDMMYYYY(d.billDate)}\n📊 *PD Bill:* ${d.pdBill}\n` : '') +
-            (d.numberType === 'COCP' ? `🏢 *Account:* ${d.accountName}\n📅 *Custody Date:* ${formatToDDMMYYYY(d.safeCustodyDate)}\n` : '') +
+            (d.numberType === 'COCP' ? `🏢 *Account:* ${d.accountName}\n📅 *Safe Custody:* ${formatToDDMMYYYY(d.safeCustodyDate)}\n📅 *Unsafe Custody:* ${formatToDDMMYYYY(d.unsafeCustodyDate)}\n` : '') +
             `👤 *Ownership:* ${d.ownershipType}${d.ownershipType === 'Partnership' ? ` (Partner: ${d.partnerName})` : ''}\n` +
             `💰 *Purchase:* From ${d.purchaseFrom} on ${formatToDDMMYYYY(d.purchaseDate)} for ₹${d.purchasePrice}\n` +
             `📈 *Intended Sale:* ₹${d.salePrice}\n` +

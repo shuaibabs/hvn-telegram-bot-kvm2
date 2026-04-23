@@ -43,6 +43,7 @@ export const numberRecordSchema = z.object({
     notes: z.string().optional(),
     checkInDate: timestampSchema.nullable(),
     safeCustodyDate: timestampSchema.nullable(),
+    unsafeCustodyDate: timestampSchema.nullable(),
     createdBy: z.string(),
     accountName: z.string().optional(),
     ownershipType: z.enum(['Individual', 'Partnership']),

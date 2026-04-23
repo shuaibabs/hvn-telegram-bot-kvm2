@@ -9,6 +9,7 @@ import { logActivity } from '../../activities/activityService';
 
 const EDIT_STAGES = {
     AWAIT_MOBILE: 'AWAIT_MOBILE',
+    AWAIT_CHOICE: 'AWAIT_CHOICE',
     AWAIT_DATE: 'AWAIT_DATE',
     SAVING: 'SAVING'
 } as const;
@@ -17,6 +18,7 @@ type EditSession = {
     chatId: number;
     stage: keyof typeof EDIT_STAGES;
     mobiles?: string[];
+    editField?: 'safeCustodyDate' | 'unsafeCustodyDate';
 };
 
 const cancelBtn = { text: '❌ Cancel', callback_data: 'cocp_edit_cancel' };
@@ -30,7 +32,7 @@ export async function startEditCOCPFlow(bot: TelegramBot, chatId: number, userna
     }
 
     setSession(chatId, 'cocpEdit', { stage: 'AWAIT_MOBILE', chatId });
-    await bot.sendMessage(chatId, "✏️ *Edit Safe Custody Date*\n\nPlease enter one or more 10-digit mobile numbers separated by comma or new line:", {
+    await bot.sendMessage(chatId, "✏️ *Edit COCP Dates*\n\nPlease enter one or more 10-digit mobile numbers separated by comma or new line:", {
         parse_mode: 'Markdown',
         reply_markup: { inline_keyboard: [[cancelBtn]] }
     });
@@ -78,21 +80,23 @@ export function registerEditCOCPFlow(router: CommandRouter) {
                 }
 
                 session.mobiles = validMobiles;
-                session.stage = 'AWAIT_DATE';
+                session.stage = 'AWAIT_CHOICE';
                 setSession(chatId, 'cocpEdit', session);
 
-                const today = formatToDDMMYYYY(new Date());
                 let responseMsg = `🏢 *Numbers Found:* \`${validMobiles.length}\`\n`;
                 if (invalidMobiles.length > 0) {
                     responseMsg += `⚠️ *Skipped (not COCP):* \`${invalidMobiles.join(', ')}\`\n`;
                 }
-                responseMsg += `\nPlease enter the new *Safe Custody Date* for these numbers (DD/MM/YYYY):\n(Type 'today' for ${today})`;
+                responseMsg += `\nWhich date would you like to edit?`;
 
                 await bot.sendMessage(chatId, responseMsg, {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: `📅 Today (${today})`, callback_data: 'cocp_edit_date_today' }],
+                            [
+                                { text: '🛡️ Safe Custody', callback_data: 'cocp_edit_field_safe' },
+                                { text: '⚠️ Unsafe Custody', callback_data: 'cocp_edit_field_unsafe' }
+                            ],
                             [cancelBtn]
                         ]
                     }
@@ -119,22 +123,28 @@ export function registerEditCOCPFlow(router: CommandRouter) {
                 return;
             }
 
+            // Lock session to prevent duplicate saves
+            session.stage = 'SAVING';
+            setSession(chatId, 'cocpEdit', session);
+
             try {
                 const creator = msg.from?.first_name + (msg.from?.last_name ? ' ' + msg.from?.last_name : '');
 
                 let successCount = 0;
                 for (const mobile of session.mobiles!) {
-                    await updateCOCPDetails(mobile, { safeCustodyDate: parsedDate }, creator);
+                    await updateCOCPDetails(mobile, { [session.editField!]: parsedDate }, creator);
                     successCount++;
                 }
 
-                await bot.sendMessage(chatId, `✅ *Updated!*\n\nSafe Custody Date for ${successCount} number(s) has been set to ${dateStr}.`, { parse_mode: 'Markdown' });
+                const fieldName = session.editField === 'safeCustodyDate' ? 'Safe Custody Date' : 'Unsafe Custody Date';
+                await bot.sendMessage(chatId, `✅ *Updated!*\n\n${fieldName} for ${successCount} number(s) has been set to ${dateStr}.`, { parse_mode: 'Markdown' });
 
                 // Log Activity
+                const action = session.editField === 'safeCustodyDate' ? 'UPDATE_COCP_SAFE_CUSTODY' : 'UPDATE_COCP_UNSAFE_CUSTODY';
                 await logActivity(bot, {
                     employeeName: creator,
-                    action: 'UPDATE_COCP_SAFE_CUSTODY',
-                    description: `Updated Safe Custody Date for ${session.mobiles!.join(', ')} to ${dateStr}.`,
+                    action: action,
+                    description: `Updated ${fieldName} for ${session.mobiles!.join(', ')} to ${dateStr}.`,
                     createdBy: creator,
                     source: 'BOT',
                     groupName: 'COCP'
@@ -145,6 +155,30 @@ export function registerEditCOCPFlow(router: CommandRouter) {
                 await bot.sendMessage(chatId, `❌ Error updating date: ${error.message}`);
             }
         }
+    });
+
+    router.registerCallback(/^cocp_edit_field_/, async (query) => {
+        const chatId = query.message!.chat.id;
+        const session = getSession(chatId, 'cocpEdit') as EditSession | undefined;
+        if (!session || session.stage !== 'AWAIT_CHOICE') return;
+
+        const field = query.data?.split('_').pop();
+        session.editField = field === 'safe' ? 'safeCustodyDate' : 'unsafeCustodyDate';
+        session.stage = 'AWAIT_DATE';
+        setSession(chatId, 'cocpEdit', session);
+
+        const fieldName = field === 'safe' ? 'Safe Custody Date' : 'Unsafe Custody Date';
+        const today = formatToDDMMYYYY(new Date());
+
+        await bot.sendMessage(chatId, `Please enter the new *${fieldName}* (DD/MM/YYYY):\n(Type 'today' for ${today})`, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: `📅 Today (${today})`, callback_data: 'cocp_edit_date_today' }],
+                    [cancelBtn]
+                ]
+            }
+        });
     });
 
     router.registerCallback('cocp_edit_date_today', async (query) => {
@@ -173,17 +207,19 @@ export function registerEditCOCPFlow(router: CommandRouter) {
 
             let successCount = 0;
             for (const mobile of session.mobiles!) {
-                await updateCOCPDetails(mobile, { safeCustodyDate: today }, creator);
+                await updateCOCPDetails(mobile, { [session.editField!]: today }, creator);
                 successCount++;
             }
 
-            await bot.sendMessage(chatId, `✅ *Updated!*\n\nSafe Custody Date for ${successCount} number(s) has been set to ${dateStr}.`, { parse_mode: 'Markdown' });
+            const fieldName = session.editField === 'safeCustodyDate' ? 'Safe Custody Date' : 'Unsafe Custody Date';
+            await bot.sendMessage(chatId, `✅ *Updated!*\n\n${fieldName} for ${successCount} number(s) has been set to ${dateStr}.`, { parse_mode: 'Markdown' });
 
             // Log Activity
+            const action = session.editField === 'safeCustodyDate' ? 'UPDATE_COCP_SAFE_CUSTODY' : 'UPDATE_COCP_UNSAFE_CUSTODY';
             await logActivity(bot, {
                 employeeName: creator,
-                action: 'UPDATE_COCP_SAFE_CUSTODY',
-                description: `Updated Safe Custody Date for ${session.mobiles!.join(', ')} to ${dateStr}.`,
+                action: action,
+                description: `Updated ${fieldName} for ${session.mobiles!.join(', ')} to ${dateStr}.`,
                 createdBy: creator,
                 source: 'BOT',
                 groupName: 'COCP'

@@ -102,7 +102,7 @@ export const getCOCPDetails = async (mobile: string, employeeName?: string): Pro
  */
 export const updateCOCPDetails = async (
     mobile: string, 
-    updates: { safeCustodyDate?: Date }, 
+    updates: { safeCustodyDate?: Date; unsafeCustodyDate?: Date }, 
     performedBy: string
 ): Promise<boolean> => {
     try {
@@ -118,10 +118,14 @@ export const updateCOCPDetails = async (
         const oldData = doc.data() as NumberRecord;
         const now = Timestamp.now();
 
+        const updatedFields = [];
+        if (updates.safeCustodyDate) updatedFields.push('Safe Custody Date');
+        if (updates.unsafeCustodyDate) updatedFields.push('Unsafe Custody Date');
+
         const historyEvent = {
             id: Math.random().toString(36).substring(2, 11),
             action: 'COCP Details Updated',
-            description: `Updated Safe Custody Date via BOT.`,
+            description: `Updated ${updatedFields.join(' and ')} via BOT.`,
             timestamp: now,
             performedBy
         };
@@ -129,6 +133,9 @@ export const updateCOCPDetails = async (
         const finalUpdates: any = { ...updates };
         if (updates.safeCustodyDate) {
             finalUpdates.safeCustodyDate = Timestamp.fromDate(updates.safeCustodyDate);
+        }
+        if (updates.unsafeCustodyDate) {
+            finalUpdates.unsafeCustodyDate = Timestamp.fromDate(updates.unsafeCustodyDate);
         }
 
         await doc.ref.update({

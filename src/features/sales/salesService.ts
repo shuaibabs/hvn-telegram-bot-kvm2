@@ -215,6 +215,7 @@ export const getVendorSalesStats = async (vendorName: string) => {
                 soldTo: s.soldTo,
                 salePrice: s.salePrice,
                 saleDate: (s.saleDate as any).toDate(),
+                saleReason: s.saleReason || '',
                 originalNumberData: s.originalNumberData
             })),
             payments: payments.map(p => ({

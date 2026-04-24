@@ -17,10 +17,10 @@ export async function dealerMenuCommand(bot: TelegramBot, chatId: number, userna
             inline_keyboard: [
                 [{ text: '📋 List Purchases', callback_data: 'dealer_purchase_list' }],
                 [{ text: '🔍 Search Purchase', callback_data: 'dealer_purchase_search' }],
+                [{ text: '⚙️ Manage Purchases', callback_data: 'dealer_manage' }],
                 [{ text: '📉 Dealer Statistics', callback_data: 'dealer_purchase_stats' }],
                 [{ text: '💳 Record Payment', callback_data: 'dealer_add_payment' }],
                 [{ text: '➕ Add Dealer Numbers', callback_data: 'dealer_add' }],
-                [{ text: '🗑️ Delete Dealer Purchase', callback_data: 'dealer_delete' }],
                 [{ text: 'ℹ️ View Details', callback_data: 'dealer_details' }]
             ]
         }
@@ -60,8 +60,9 @@ export function registerDealerFeature(router: CommandRouter) {
         await startAddDealerFlow(bot, query.message!.chat.id, query.from.username);
     }), [env.TG_GROUP_DEALER_PURCHASES || '']);
 
-    router.registerCallback('dealer_delete', Guard.registeredOnlyCallback(bot, async (query) => {
-        await startDeleteDealerFlow(bot, query.message!.chat.id, query.from.username);
+    router.registerCallback('dealer_manage', Guard.registeredOnlyCallback(bot, async (query) => {
+        const { startManageDealerPurchaseFlow } = await import('../flows/manageDealerPurchaseFlow');
+        await startManageDealerPurchaseFlow(bot, query.message!.chat.id, query.from.username);
     }), [env.TG_GROUP_DEALER_PURCHASES || '']);
 
     router.registerCallback('dealer_details', Guard.registeredOnlyCallback(bot, async (query) => {

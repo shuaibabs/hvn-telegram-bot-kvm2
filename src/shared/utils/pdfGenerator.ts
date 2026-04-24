@@ -1,12 +1,20 @@
 import PDFDocument from 'pdfkit';
 import { format } from 'date-fns';
 
+export type PdfSection = {
+    title: string;
+    headers: string[];
+    rows: (string | number)[][];
+    columnWidths?: number[];
+};
+
 export type PdfReportData = {
     title: string;
     subtitle?: string;
     summary: { label: string; value: string | number }[];
-    headers: string[];
-    rows: (string | number)[][];
+    headers?: string[]; // Deprecated, use sections
+    rows?: (string | number)[][]; // Deprecated, use sections
+    sections?: PdfSection[];
 };
 
 export async function generatePdfBuffer(data: PdfReportData): Promise<Buffer> {
@@ -45,50 +53,71 @@ export async function generatePdfBuffer(data: PdfReportData): Promise<Buffer> {
 
             doc.moveDown(2);
 
-            // Table
-            const tableTop = doc.y;
-            const columnWidths = [40, 100, 50, 120, 80, 80]; // Sr.No, Mobile, Sum, Sold To, Price, Date
-            const headers = data.headers;
-
-            // Draw Table Headers
-            let currentX = 50;
-            doc.fontSize(10).fillColor('#ffffff');
-            
-            // Header Background
-            doc.rect(50, tableTop - 5, 470, 20).fill('#2980b9');
-            
-            headers.forEach((header, i) => {
-                doc.fillColor('#ffffff')
-                   .text(header, currentX, tableTop, { width: columnWidths[i], align: 'left' });
-                currentX += columnWidths[i];
-            });
-
-            doc.moveDown(1.5);
-            
-            // Draw Table Rows
-            doc.fillColor('#000000');
-            data.rows.forEach((row, rowIndex) => {
-                const y = doc.y;
-                let x = 50;
-                
-                // Zebra stripes
-                if (rowIndex % 2 === 1) {
-                    doc.save()
-                       .rect(50, y - 5, 470, 20)
-                       .fill('#f5f5f5')
-                       .restore();
-                }
-
-                row.forEach((cell, i) => {
-                    doc.text(String(cell), x, y, { width: columnWidths[i], align: 'left' });
-                    x += columnWidths[i];
+            // Prepare sections
+            const sections: PdfSection[] = data.sections || [];
+            if (data.headers && data.rows) {
+                sections.unshift({
+                    title: "Records",
+                    headers: data.headers,
+                    rows: data.rows
                 });
-                doc.moveDown(0.8);
-                
-                // Add page if needed
-                if (doc.y > 700) {
-                    doc.addPage();
+            }
+
+            // Render Sections
+            sections.forEach((section, sIdx) => {
+                if (doc.y > 650) doc.addPage();
+
+                if (section.title) {
+                    doc.fontSize(14).fillColor('#2c3e50').text(section.title.toUpperCase()).moveDown(0.5);
                 }
+
+                const tableTop = doc.y;
+                const headers = section.headers;
+                const columnWidths = section.columnWidths || headers.map(() => 470 / headers.length);
+                
+                // Draw Table Headers
+                let currentX = 50;
+                doc.fontSize(10).fillColor('#ffffff');
+                
+                // Header Background
+                doc.rect(50, tableTop - 5, 470, 20).fill('#2980b9');
+                
+                headers.forEach((header, i) => {
+                    doc.fillColor('#ffffff')
+                       .text(header, currentX, tableTop, { width: columnWidths[i], align: 'left' });
+                    currentX += columnWidths[i];
+                });
+
+                doc.moveDown(1.5);
+                
+                // Draw Table Rows
+                doc.fillColor('#000000');
+                section.rows.forEach((row, rowIndex) => {
+                    const y = doc.y;
+                    let x = 50;
+                    
+                    // Zebra stripes
+                    if (rowIndex % 2 === 1) {
+                        doc.save()
+                           .rect(50, y - 5, 470, 20)
+                           .fill('#f5f5f5')
+                           .restore();
+                    }
+
+                    row.forEach((cell, i) => {
+                        doc.text(String(cell), x, y, { width: columnWidths[i], align: 'left' });
+                        x += columnWidths[i];
+                    });
+                    doc.moveDown(0.8);
+                    
+                    // Add page if needed
+                    if (doc.y > 700) {
+                        doc.addPage();
+                        // Redraw headers on new page? (Optional improvement, keeping it simple for now)
+                    }
+                });
+
+                doc.moveDown(2);
             });
 
             doc.end();

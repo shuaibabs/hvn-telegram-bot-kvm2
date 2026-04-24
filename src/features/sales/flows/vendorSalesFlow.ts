@@ -67,7 +67,8 @@ export function registerVendorSalesFlow(router: CommandRouter) {
             if (stats.records && stats.records.length > 0) {
                 stats.records.forEach((r: any, idx: number) => {
                     const dateStr = formatToDDMMYYYY(r.saleDate);
-                    text += `${idx + 1}. \`${r.mobile}\` | Sum: ${r.sum} | ₹${r.salePrice.toLocaleString()} | ${dateStr}\n`;
+                    const reason = r.saleReason ? ` | Reason: ${r.saleReason}` : '';
+                    text += `${idx + 1}. \`${r.mobile}\` | Sum: ${r.sum} | ₹${r.salePrice.toLocaleString()} | ${dateStr}${reason}\n`;
                 });
             } else {
                 text += "_No records found._";
@@ -103,21 +104,34 @@ export function registerVendorSalesFlow(router: CommandRouter) {
                 subtitle: `Vendor: ${vendorName}`,
                 summary: [
                     { label: "Total Billed", value: `INR ${stats.totalBilled.toLocaleString()}` },
-                    { label: "Total Purchase Amount", value: `INR ${stats.totalPurchaseAmount.toLocaleString()}` },
-                    { label: "Profit/Loss", value: `INR ${stats.profitLoss.toLocaleString()}` },
                     { label: "Total Paid", value: `INR ${stats.totalPaid.toLocaleString()}` },
                     { label: "Amount Remaining", value: `INR ${stats.amountRemaining.toLocaleString()}` },
                     { label: "Total Records", value: stats.totalRecords }
                 ],
-                headers: ["Sr.No", "Mobile", "Sum", "Sold To", "Price", "Date"],
-                rows: stats.records.map((r, i) => [
-                    i + 1,
-                    r.mobile,
-                    r.sum,
-                    r.soldTo,
-                    `INR ${r.salePrice.toLocaleString()}`,
-                    formatToDDMMYYYY(r.saleDate)
-                ])
+                sections: [
+                    {
+                        title: "Sale Records",
+                        headers: ["Sr.No", "Mobile", "Sum", "Price", "Date", "Reason"],
+                        columnWidths: [40, 80, 40, 70, 70, 170],
+                        rows: stats.records.map((r, i) => [
+                            i + 1,
+                            r.mobile,
+                            r.sum,
+                            `INR ${r.salePrice.toLocaleString()}`,
+                            formatToDDMMYYYY(r.saleDate),
+                            r.saleReason || '-'
+                        ])
+                    },
+                    {
+                        title: "Payment History",
+                        headers: ["Date", "Amount"],
+                        columnWidths: [200, 270],
+                        rows: (stats as any).payments.map((p: any) => [
+                            formatToDDMMYYYY(p.paymentDate),
+                            `INR ${p.amount.toLocaleString()}`
+                        ])
+                    }
+                ]
             };
 
             const buffer = await generatePdfBuffer(pdfData);
@@ -218,20 +232,33 @@ export function registerVendorSalesFlow(router: CommandRouter) {
                 subtitle: `Vendor: ${vendorName} | Period: ${monthName} ${year}`,
                 summary: [
                     { label: "Total Billed (Period)", value: `INR ${filteredTotalBilled.toLocaleString()}` },
-                    { label: "Purchase Amount", value: `INR ${filteredTotalPurchase.toLocaleString()}` },
-                    { label: "Profit/Loss", value: `INR ${filteredProfitLoss.toLocaleString()}` },
                     { label: "Total Paid (Period)", value: `INR ${filteredTotalPaid.toLocaleString()}` },
                     { label: "Total Records", value: filteredRecords.length }
                 ],
-                headers: ["Sr.No", "Mobile", "Sum", "Sold To", "Price", "Date"],
-                rows: filteredRecords.map((r: any, i: number) => [
-                    i + 1,
-                    r.mobile,
-                    r.sum,
-                    r.soldTo,
-                    `INR ${r.salePrice.toLocaleString()}`,
-                    formatToDDMMYYYY(r.saleDate)
-                ])
+                sections: [
+                    {
+                        title: `Sales for ${monthName} ${year}`,
+                        headers: ["Sr.No", "Mobile", "Sum", "Price", "Date", "Reason"],
+                        columnWidths: [40, 80, 40, 70, 70, 170],
+                        rows: filteredRecords.map((r: any, i: number) => [
+                            i + 1,
+                            r.mobile,
+                            r.sum,
+                            `INR ${r.salePrice.toLocaleString()}`,
+                            formatToDDMMYYYY(r.saleDate),
+                            r.saleReason || '-'
+                        ])
+                    },
+                    {
+                        title: `Payments for ${monthName} ${year}`,
+                        headers: ["Date", "Amount"],
+                        columnWidths: [200, 270],
+                        rows: filteredPayments.map((p: any) => [
+                            formatToDDMMYYYY(p.paymentDate),
+                            `INR ${p.amount.toLocaleString()}`
+                        ])
+                    }
+                ]
             };
 
             const buffer = await generatePdfBuffer(pdfData);

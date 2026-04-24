@@ -316,7 +316,7 @@ export const getAllNumbers = async (): Promise<NumberRecord[]> => {
  */
 export const markAsSoldBatch = async (
     mobiles: string[],
-    details: { salePrice: number; soldTo: string; saleDate: Date },
+    details: { salePrice: number; soldTo: string; saleDate: Date; remark?: string; saleReason?: string },
     createdByUid: string,
     creatorName: string
 ): Promise<{ successCount: number }> => {
@@ -358,7 +358,9 @@ export const markAsSoldBatch = async (
             originalNumberData: {
                 ...numberData,
                 history: [...(numberData.history || []), historyEvent]
-            }
+            },
+            remark: details.remark || '',
+            saleReason: details.saleReason || ''
         };
 
         const saleDocRef = salesCollection.doc();

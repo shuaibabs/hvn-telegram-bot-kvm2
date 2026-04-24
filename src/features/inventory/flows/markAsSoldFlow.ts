@@ -11,6 +11,8 @@ const MARK_AS_SOLD_STAGES = {
     AWAIT_SALE_PRICE: 'AWAIT_SALE_PRICE',
     AWAIT_VENDOR: 'AWAIT_VENDOR',
     AWAIT_SALE_DATE: 'AWAIT_SALE_DATE',
+    AWAIT_REMARK: 'AWAIT_REMARK',
+    AWAIT_SALE_REASON: 'AWAIT_SALE_REASON',
     CONFIRM: 'CONFIRM',
     SAVING: 'SAVING',
 } as const;
@@ -22,6 +24,8 @@ type MarkAsSoldSession = {
         salePrice: number;
         soldTo: string;
         saleDate: Date;
+        remark: string;
+        saleReason: string;
     };
 };
 
@@ -34,7 +38,9 @@ export async function startMarkAsSoldFlow(bot: TelegramBot, chatId: number) {
             numbers: [],
             salePrice: 0,
             soldTo: '',
-            saleDate: new Date()
+            saleDate: new Date(),
+            remark: '',
+            saleReason: ''
         }
     });
 
@@ -133,6 +139,32 @@ export function registerMarkAsSoldFlow(router: CommandRouter) {
                     }
                 }
                 session.data.saleDate = date;
+                session.stage = 'AWAIT_REMARK';
+                setSession(chatId, 'markAsSold', session);
+                
+                await bot.sendMessage(chatId, "*Step 5:* Enter any Remark/Notes for this sale (or type 'none' to skip):", {
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[cancelBtn]] }
+                });
+                break;
+            }
+
+            case 'AWAIT_REMARK': {
+                const remark = msg.text.trim();
+                session.data.remark = (remark.toLowerCase() === 'none') ? '' : remark;
+                session.stage = 'AWAIT_SALE_REASON';
+                setSession(chatId, 'markAsSold', session);
+                
+                await bot.sendMessage(chatId, "*Step 6:* Enter the Reason of Sales (or type 'none' to skip):", {
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[cancelBtn]] }
+                });
+                break;
+            }
+
+            case 'AWAIT_SALE_REASON': {
+                const saleReason = msg.text.trim();
+                session.data.saleReason = (saleReason.toLowerCase() === 'none') ? '' : saleReason;
                 session.stage = 'CONFIRM';
                 setSession(chatId, 'markAsSold', session);
                 await showSoldConfirmation(bot, chatId, session);
@@ -174,9 +206,12 @@ export function registerMarkAsSoldFlow(router: CommandRouter) {
         if (!session || session.stage !== 'AWAIT_SALE_DATE') return;
 
         session.data.saleDate = new Date();
-        session.stage = 'CONFIRM';
+        session.stage = 'AWAIT_REMARK';
         setSession(chatId, 'markAsSold', session);
-        await showSoldConfirmation(bot, chatId, session);
+        await bot.sendMessage(chatId, "*Step 5:* Enter any Remark/Notes for this sale (or type 'none' to skip):", {
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: [[cancelBtn]] }
+        });
     });
 
     router.registerCallback('sold_confirm', async (query) => {
@@ -206,7 +241,9 @@ export function registerMarkAsSoldFlow(router: CommandRouter) {
             const result = await markAsSoldBatch(session.data.numbers, {
                 salePrice: session.data.salePrice,
                 soldTo: session.data.soldTo,
-                saleDate: session.data.saleDate
+                saleDate: session.data.saleDate,
+                remark: session.data.remark,
+                saleReason: session.data.saleReason
             }, query.from.id.toString(), creator);
 
             await bot.sendMessage(chatId, `✅ *Numbers Marked as Sold!*\n\nSuccessfully moved ${result.successCount} number(s) to Sales.`, { parse_mode: 'Markdown' });
@@ -239,7 +276,9 @@ async function showSoldConfirmation(bot: TelegramBot, chatId: number, session: M
         `📱 *Numbers:* ${session.data.numbers.join(', ')}\n` +
         `💰 *Sale Price:* ₹${session.data.salePrice}\n` +
         `👤 *Sold To:* ${session.data.soldTo}\n` +
-        `📅 *Sale Date:* ${formatToDDMMYYYY(session.data.saleDate)}\n\n` +
+        `📅 *Sale Date:* ${formatToDDMMYYYY(session.data.saleDate)}\n` +
+        `📝 *Remark:* ${session.data.remark || 'N/A'}\n` +
+        `🏷️ *Reason of Sales:* ${session.data.saleReason || 'N/A'}\n\n` +
         `*Move these numbers to Sales collection?*`;
 
     await bot.sendMessage(chatId, summary, {

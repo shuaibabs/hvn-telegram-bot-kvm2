@@ -98,7 +98,37 @@ export const dealerPurchaseRecordSchema = z.object({
     sum: z.number(),
     dealerName: z.string(),
     price: z.number(),
+    stockType: z.enum(['Premium', 'Basic']),
+    intendedSalePrice: z.number(),
     createdBy: z.string(),
+    history: z.array(lifecycleEventSchema).optional(),
+});
+
+export const dealerSaleRecordSchema = z.object({
+    id: z.string(),
+    srNo: z.number(),
+    mobile: z.string(),
+    sum: z.number(),
+    dealerName: z.string(),
+    purchasePrice: z.number(),
+    salePrice: z.number(),
+    saleDate: timestampSchema,
+    stockType: z.enum(['Premium', 'Basic']),
+    createdBy: z.string(),
+    performedBy: z.string(),
+});
+
+export const dealerDeleteRecordSchema = z.object({
+    id: z.string(),
+    srNo: z.number(),
+    mobile: z.string(),
+    sum: z.number(),
+    dealerName: z.string(),
+    purchasePrice: z.number(),
+    deletedAt: timestampSchema,
+    deletedBy: z.string(),
+    reason: z.string().optional(),
+    stockType: z.enum(['Premium', 'Basic']),
 });
 
 export const paymentRecordSchema = z.object({

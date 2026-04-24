@@ -1,6 +1,6 @@
 import { db } from '../../config/firebase';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
-import { DealerPurchaseRecord, NewDealerPurchaseData, DealerRecord, NewDealerData } from '../../shared/types/data';
+import { DealerPurchaseRecord, NewDealerPurchaseData, DealerRecord, NewDealerData, DealerSaleRecord, DealerDeleteRecord } from '../../shared/types/data';
 import { logger } from '../../core/logger/logger';
 import { calculateDigitalRoot } from '../../shared/utils/utils';
 
@@ -30,9 +30,9 @@ export async function addDealerPurchaseStep(data: NewDealerPurchaseData, creator
         const historyEvent = {
             id: Math.random().toString(36).substring(2, 11),
             action: 'Dealer Purchase Created',
-            description: `Dealer purchase record created for ${data.mobile} from dealer ${data.dealerName} via BOT.`,
+            description: `Dealer purchase record created for ${data.mobile} from dealer ${data.dealerName} (${data.stockType}) via BOT.`,
             timestamp: now,
-            performedBy: creatorUid // Since we might not have a clean name here, we'll use creatorUid or fetch name later
+            performedBy: creatorUid 
         };
 
         const newPurchase: Omit<DealerPurchaseRecord, 'id'> = {
@@ -47,6 +47,83 @@ export async function addDealerPurchaseStep(data: NewDealerPurchaseData, creator
         return true;
     } catch (error: any) {
         logger.error(`Error in addDealerPurchaseStep: ${error.message}`);
+        throw error;
+    }
+}
+
+export async function markDealerPurchaseAsSold(id: string, salePrice: number, performedBy: string) {
+    try {
+        const purchaseRef = db.collection('dealerPurchases').doc(id);
+        const purchaseDoc = await purchaseRef.get();
+        if (!purchaseDoc.exists) throw new Error("Purchase record not found.");
+
+        const purchaseData = purchaseDoc.data() as DealerPurchaseRecord;
+        const now = Timestamp.now();
+
+        const saleRecord: Omit<DealerSaleRecord, 'id'> = {
+            srNo: purchaseData.srNo,
+            mobile: purchaseData.mobile,
+            sum: purchaseData.sum,
+            dealerName: purchaseData.dealerName,
+            purchasePrice: purchaseData.price,
+            salePrice,
+            saleDate: now,
+            stockType: purchaseData.stockType,
+            createdBy: purchaseData.createdBy,
+            performedBy
+        };
+
+        // Add to dealerSales
+        await db.collection('dealerSales').add(saleRecord);
+        // Delete from dealerPurchases
+        await purchaseRef.delete();
+        return true;
+    } catch (error: any) {
+        logger.error(`Error in markDealerPurchaseAsSold: ${error.message}`);
+        throw error;
+    }
+}
+
+export async function moveDealerPurchaseToDeletes(id: string, deletedBy: string, reason?: string) {
+    try {
+        const purchaseRef = db.collection('dealerPurchases').doc(id);
+        const purchaseDoc = await purchaseRef.get();
+        if (!purchaseDoc.exists) throw new Error("Purchase record not found.");
+
+        const purchaseData = purchaseDoc.data() as DealerPurchaseRecord;
+        const now = Timestamp.now();
+
+        const deleteRecord: Omit<DealerDeleteRecord, 'id'> = {
+            srNo: purchaseData.srNo,
+            mobile: purchaseData.mobile,
+            sum: purchaseData.sum,
+            dealerName: purchaseData.dealerName,
+            purchasePrice: purchaseData.price,
+            deletedAt: now,
+            deletedBy,
+            reason: reason || 'Manual Deletion',
+            stockType: purchaseData.stockType
+        };
+
+        // Add to dealerDeletes
+        await db.collection('dealerDeletes').add(deleteRecord);
+        // Delete from dealerPurchases
+        await purchaseRef.delete();
+        return true;
+    } catch (error: any) {
+        logger.error(`Error in moveDealerPurchaseToDeletes: ${error.message}`);
+        throw error;
+    }
+}
+
+export async function updateDealerPurchaseSalePrice(id: string, newIntendedPrice: number) {
+    try {
+        await db.collection('dealerPurchases').doc(id).update({
+            intendedSalePrice: newIntendedPrice
+        });
+        return true;
+    } catch (error: any) {
+        logger.error(`Error in updateDealerPurchaseSalePrice: ${error.message}`);
         throw error;
     }
 }

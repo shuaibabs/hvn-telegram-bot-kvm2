@@ -59,14 +59,27 @@ export function registerAddDealerFlow(router: CommandRouter) {
                 return;
             }
             session.price = price;
+            session.stage = 'AWAIT_INTENDED_SALE_PRICE';
+            setSession(chatId, 'addDealer', session);
+
+            await bot.sendMessage(chatId, `💰 Purchase Price: ₹${price}\n\nEnter *Intended Sale Price* per number:`, { parse_mode: 'Markdown' });
+        } else if (session.stage === 'AWAIT_INTENDED_SALE_PRICE') {
+            const salePrice = parseFloat(text);
+            if (isNaN(salePrice)) {
+                await bot.sendMessage(chatId, "❌ Invalid price. Please enter a number.");
+                return;
+            }
+            session.intendedSalePrice = salePrice;
             session.stage = 'CONFIRMATION';
             setSession(chatId, 'addDealer', session);
 
             let confirmText = `🔔 *Confirm Dealer Purchase*\n\n`;
             confirmText += `📱 Numbers: ${session.mobiles.join(', ')}\n`;
-            confirmText += `👤 Dealer: ${session.dealerName}\n`;
-            confirmText += `💰 Price: ₹${price} each\n`;
-            confirmText += `💵 Total: ₹${price * session.mobiles.length}\n\n`;
+            confirmText += `🏢 Dealer: ${session.dealerName}\n`;
+            confirmText += `📈 Stock Type: ${session.stockType}\n`;
+            confirmText += `💰 Purchase Price: ₹${session.price} each\n`;
+            confirmText += `🏷️ Intended Sale Price: ₹${salePrice} each\n`;
+            confirmText += `💵 Total Purchase: ₹${session.price * session.mobiles.length}\n\n`;
             confirmText += `Do you want to add these records?`;
 
             await bot.sendMessage(chatId, confirmText, {
@@ -94,10 +107,32 @@ export function registerAddDealerFlow(router: CommandRouter) {
             await bot.sendMessage(chatId, "📝 Please enter the *New Dealer Name*:", { parse_mode: 'Markdown' });
         } else {
             session.dealerName = selection;
-            session.stage = 'AWAIT_PRICE';
+            session.stage = 'SELECT_STOCK_TYPE';
             setSession(chatId, 'addDealer', session);
-            await bot.sendMessage(chatId, `🏢 Selected Dealer: *${selection}*\n\nEnter *Purchase Price* per number:`, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, `🏢 Selected Dealer: *${selection}*\n\nSelect *Stock Type*:`, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '⭐ Premium Stock', callback_data: 'dealer_stock_Premium' }],
+                        [{ text: '📦 Basic Stock', callback_data: 'dealer_stock_Basic' }],
+                        [{ text: '❌ Cancel', callback_data: 'dealer_add_cancel' }]
+                    ]
+                }
+            });
         }
+    });
+
+    router.registerCallback(/^dealer_stock_/, async (query) => {
+        const chatId = query.message!.chat.id;
+        const session = getSession(chatId, 'addDealer');
+        if (!session || session.stage !== 'SELECT_STOCK_TYPE') return;
+
+        const stockType = query.data?.split('_').pop();
+        session.stockType = stockType;
+        session.stage = 'AWAIT_PRICE';
+        setSession(chatId, 'addDealer', session);
+
+        await bot.sendMessage(chatId, `📈 Stock Type: *${stockType}*\n\nEnter *Purchase Price* per number:`, { parse_mode: 'Markdown' });
     });
 
     router.registerCallback('dealer_add_confirm', async (query) => {
@@ -135,7 +170,9 @@ export function registerAddDealerFlow(router: CommandRouter) {
                 await addDealerPurchaseStep({
                     mobile,
                     dealerName: session.dealerName,
-                    price: session.price
+                    price: session.price,
+                    stockType: session.stockType,
+                    intendedSalePrice: session.intendedSalePrice
                 }, profile.uid);
             }
             await bot.sendMessage(chatId, `✅ *Success!*\n\n${session.mobiles.length} dealer purchase records have been added.`, { parse_mode: 'Markdown' });
@@ -145,7 +182,7 @@ export function registerAddDealerFlow(router: CommandRouter) {
             await logActivity(bot, {
                 employeeName: performedBy,
                 action: 'ADD_DEALER_PURCHASE',
-                description: `Added dealer purchase for ${session.mobiles.length} numbers: ${session.mobiles.join(', ')} (Dealer: ${session.dealerName}, Price: ₹${session.price})`,
+                description: `Added dealer purchase for ${session.mobiles.length} numbers: ${session.mobiles.join(', ')} (Dealer: ${session.dealerName}, Type: ${session.stockType}, Purchase: ₹${session.price}, Sale: ₹${session.intendedSalePrice})`,
                 createdBy: performedBy,
                 source: 'BOT',
                 groupName: 'DEALER_PURCHASES'

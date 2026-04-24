@@ -7,6 +7,7 @@ import { registerAddDealerPaymentFlow } from './flows/addDealerPaymentFlow';
 import { registerDealerStatsFlow } from './flows/dealerStatsFlow';
 import { registerSearchDealerPurchasesFlow } from './flows/searchDealerPurchasesFlow';
 import { registerListDealerPurchasesFlow } from './flows/listDealerPurchasesFlow';
+import { registerManageDealerPurchaseFlow } from './flows/manageDealerPurchaseFlow';
 
 export function registerDealerFeature(router: CommandRouter) {
     registerMain(router);
@@ -17,4 +18,5 @@ export function registerDealerFeature(router: CommandRouter) {
     registerDealerStatsFlow(router);
     registerSearchDealerPurchasesFlow(router);
     registerListDealerPurchasesFlow(router);
+    registerManageDealerPurchaseFlow(router);
 }

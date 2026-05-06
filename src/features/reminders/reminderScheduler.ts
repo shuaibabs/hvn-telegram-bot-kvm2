@@ -93,70 +93,40 @@ export async function processDueReminders() {
             }
         });
 
-        // Construct the summary message
-        let messages: string[] = [];
-        let currentMessage = `⚠️ **Daily Task Summary**\n\n`;
-
-        // 1. Safe Custody Section
+        // 1. Safe Custody Category
         const dateKeys = Object.keys(safeCustodyGroups).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-        for (const dateKey of dateKeys) {
-            const mobiles = safeCustodyGroups[dateKey];
-            let section = `📅 **Safe Custody Date Arrived (${dateKey})**\n`;
-            mobiles.forEach(m => section += `• \`${m}\`\n`);
-            section += `\n`;
-
-            if ((currentMessage + section).length > 3500) {
-                messages.push(currentMessage);
-                currentMessage = section;
-            } else {
-                currentMessage += section;
+        if (dateKeys.length > 0) {
+            let scMessage = `📅 **Safe Custody Dates Arrived (COCP)**\n\n`;
+            for (const dateKey of dateKeys) {
+                const mobiles = safeCustodyGroups[dateKey];
+                scMessage += `*Date: ${dateKey}*\n`;
+                mobiles.forEach(m => scMessage += `• \`${m}\`\n`);
+                scMessage += `\n`;
             }
+            await broadcastWithRetry('WORK_REMINDERS', scMessage, 'BOT');
+            await sleep(2000);
         }
 
-        // 2. Pre-booked Section
+        // 2. Pre-booked Category
         if (prebookedRtpList.length > 0) {
-            let section = `📅 **Pre-Booked Numbers now RTP**\n`;
-            prebookedRtpList.forEach(m => section += `• \`${m}\`\n`);
-            section += `\n`;
-
-            if ((currentMessage + section).length > 3500) {
-                messages.push(currentMessage);
-                currentMessage = section;
-            } else {
-                currentMessage += section;
-            }
+            let pbMessage = `📅 **Pre-Booked Numbers now RTP**\n\n`;
+            prebookedRtpList.forEach(m => pbMessage += `• \`${m}\`\n`);
+            pbMessage += `\nPlease update these records in the dashboard.`;
+            await broadcastWithRetry('WORK_REMINDERS', pbMessage, 'BOT');
+            await sleep(2000);
         }
 
-        // 3. General Section
+        // 3. General Reminders Category
         if (generalReminders.length > 0) {
-            let section = `📅 **Other Pending Tasks**\n`;
+            let genMessage = `📅 **Other Pending Reminders**\n\n`;
             generalReminders.forEach((r, idx) => {
                 const dueDate = r.dueDate instanceof admin.firestore.Timestamp ? r.dueDate.toDate() : new Date(r.dueDate);
                 const assignedTo = Array.isArray(r.assignedTo) ? r.assignedTo.join(', ') : r.assignedTo;
-                section += `${idx + 1}. **${r.taskName}**\n`;
-                section += `   - Assigned to: ${assignedTo}\n`;
-                section += `   - Due: ${format(dueDate, 'PPP')}\n\n`;
+                genMessage += `${idx + 1}. **${r.taskName}**\n`;
+                genMessage += `   - Assigned to: ${assignedTo}\n`;
+                genMessage += `   - Due: ${format(dueDate, 'PPP')}\n\n`;
             });
-
-            if ((currentMessage + section).length > 3500) {
-                messages.push(currentMessage);
-                currentMessage = section;
-            } else {
-                currentMessage += section;
-            }
-        }
-
-        currentMessage += `Please check the dashboard to manage these tasks.`;
-        messages.push(currentMessage);
-
-        // Broadcast summary message(s)
-        for (let i = 0; i < messages.length; i++) {
-            const label = messages.length > 1 ? ` (Part ${i + 1}/${messages.length})` : '';
-            await broadcastWithRetry('WORK_REMINDERS', messages[i] + label, 'BOT');
-            
-            if (i < messages.length - 1) {
-                await sleep(3000); // 3s delay between summary parts
-            }
+            await broadcastWithRetry('WORK_REMINDERS', genMessage, 'BOT');
         }
 
     } catch (error: any) {
@@ -168,12 +138,14 @@ export async function processDueReminders() {
  * Starts a scheduler that checks for due reminders every day at 7:00 AM.
  */
 export function startReminderScheduler() {
-    logger.info("⏰ Robust Reminder Scheduler initialized (Daily at 07:00 AM).");
+    logger.info("⏰ Robust Reminder Scheduler initialized (Daily at 07:00 AM IST).");
 
-    // Schedule: 07:00 AM every day
+    // Schedule: 07:00 AM every day in Asia/Kolkata timezone
     cron.schedule('0 7 * * *', async () => {
-        logger.info("📅 Triggering scheduled daily reminder check at 07:00 AM...");
+        logger.info("📅 Triggering scheduled daily reminder check at 07:00 AM IST...");
         await processDueReminders();
+    }, {
+        timezone: "Asia/Kolkata"
     });
 
     // Initial check after startup (30 seconds delay to allow system to settle)

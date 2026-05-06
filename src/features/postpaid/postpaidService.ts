@@ -8,12 +8,26 @@ import { logger } from '../../core/logger/logger';
  */
 export const getPostpaidNumbers = async (employeeName?: string): Promise<NumberRecord[]> => {
     try {
-        let query: any = db.collection('numbers').where('numberType', '==', 'Postpaid');
+        let invQuery: any = db.collection('numbers').where('numberType', '==', 'Postpaid');
+        let pbQuery: any = db.collection('prebookings').where('originalNumberData.numberType', '==', 'Postpaid');
+
         if (employeeName) {
-            query = query.where('assignedTo', '==', employeeName);
+            invQuery = invQuery.where('assignedTo', '==', employeeName);
+            pbQuery = pbQuery.where('originalNumberData.assignedTo', '==', employeeName);
         }
-        const snapshot = await query.get();
-        const results = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as NumberRecord));
+
+        const [invSnapshot, pbSnapshot] = await Promise.all([invQuery.get(), pbQuery.get()]);
+
+        const invResults = invSnapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as NumberRecord));
+        const pbResults = pbSnapshot.docs.map((doc: any) => {
+            const data = doc.data();
+            return {
+                ...data.originalNumberData,
+                id: doc.id,
+            } as unknown as NumberRecord;
+        });
+
+        const results = [...invResults, ...pbResults];
         return results.sort((a: NumberRecord, b: NumberRecord) => (b.srNo || 0) - (a.srNo || 0));
     } catch (error: any) {
         logger.error(`Error in getPostpaidNumbers: ${error.message}`);
@@ -26,13 +40,27 @@ export const getPostpaidNumbers = async (employeeName?: string): Promise<NumberR
  */
 export const searchPostpaidNumbers = async (criteria: any, employeeName?: string): Promise<NumberRecord[]> => {
     try {
-        let query: any = db.collection('numbers').where('numberType', '==', 'Postpaid');
+        let invQuery: any = db.collection('numbers').where('numberType', '==', 'Postpaid');
+        let pbQuery: any = db.collection('prebookings').where('originalNumberData.numberType', '==', 'Postpaid');
+
         if (employeeName) {
-            query = query.where('assignedTo', '==', employeeName);
+            invQuery = invQuery.where('assignedTo', '==', employeeName);
+            pbQuery = pbQuery.where('originalNumberData.assignedTo', '==', employeeName);
         }
 
-        const snapshot = await query.get();
-        let numbers = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as NumberRecord));
+        const [invSnapshot, pbSnapshot] = await Promise.all([invQuery.get(), pbQuery.get()]);
+
+        const invResults = invSnapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as NumberRecord));
+        const pbResults = pbSnapshot.docs.map((doc: any) => {
+            const data = doc.data();
+            return {
+                ...data.originalNumberData,
+                id: doc.id,
+                status: 'Pre-Booked'
+            } as unknown as NumberRecord;
+        });
+
+        let numbers = [...invResults, ...pbResults];
 
         const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice } = criteria;
 
@@ -80,17 +108,33 @@ export const searchPostpaidNumbers = async (criteria: any, employeeName?: string
  */
 export const getPostpaidDetails = async (mobile: string, employeeName?: string): Promise<NumberRecord | null> => {
     try {
-        let queryClient: any = db.collection('numbers')
+        // Check inventory first
+        let invQuery: any = db.collection('numbers')
             .where('mobile', '==', mobile)
             .where('numberType', '==', 'Postpaid');
+        if (employeeName) invQuery = invQuery.where('assignedTo', '==', employeeName);
         
-        if (employeeName) {
-            queryClient = queryClient.where('assignedTo', '==', employeeName);
+        const invSnapshot = await invQuery.limit(1).get();
+        if (!invSnapshot.empty) {
+            return { id: invSnapshot.docs[0].id, ...invSnapshot.docs[0].data() } as NumberRecord;
         }
 
-        const snapshot = await queryClient.limit(1).get();
-        if (snapshot.empty) return null;
-        return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as NumberRecord;
+        // Check prebookings
+        let pbQuery: any = db.collection('prebookings')
+            .where('mobile', '==', mobile)
+            .where('originalNumberData.numberType', '==', 'Postpaid');
+        if (employeeName) pbQuery = pbQuery.where('originalNumberData.assignedTo', '==', employeeName);
+
+        const pbSnapshot = await pbQuery.limit(1).get();
+        if (!pbSnapshot.empty) {
+            const data = pbSnapshot.docs[0].data();
+            return { 
+                ...data.originalNumberData, 
+                id: pbSnapshot.docs[0].id, 
+            } as unknown as NumberRecord;
+        }
+
+        return null;
     } catch (error: any) {
         logger.error(`Error in getPostpaidDetails: ${error.message}`);
         throw error;
@@ -106,16 +150,30 @@ export const updatePostpaidDetails = async (
     performedBy: string
 ): Promise<boolean> => {
     try {
-        const snapshot = await db.collection('numbers')
+        let snapshot = await db.collection('numbers')
             .where('mobile', '==', mobile)
             .where('numberType', '==', 'Postpaid')
             .limit(1)
             .get();
         
+        let isPreBooking = false;
+
+        if (snapshot.empty) {
+            snapshot = await db.collection('prebookings')
+                .where('mobile', '==', mobile)
+                .where('originalNumberData.numberType', '==', 'Postpaid')
+                .limit(1)
+                .get();
+            if (!snapshot.empty) {
+                isPreBooking = true;
+            }
+        }
+
         if (snapshot.empty) return false;
 
         const doc = snapshot.docs[0];
-        const oldData = doc.data() as NumberRecord;
+        const rawData = doc.data();
+        const oldData = isPreBooking ? rawData.originalNumberData : rawData;
         const now = Timestamp.now();
 
         const historyEvent = {
@@ -126,15 +184,18 @@ export const updatePostpaidDetails = async (
             performedBy
         };
 
-        const finalUpdates: any = { ...updates };
+        const finalUpdates: any = {};
         if (updates.billDate) {
-            finalUpdates.billDate = Timestamp.fromDate(updates.billDate);
+            finalUpdates[isPreBooking ? 'originalNumberData.billDate' : 'billDate'] = Timestamp.fromDate(updates.billDate);
+        }
+        if (updates.pdBill) {
+            finalUpdates[isPreBooking ? 'originalNumberData.pdBill' : 'pdBill'] = updates.pdBill;
         }
 
-        await doc.ref.update({
-            ...finalUpdates,
-            history: [...(oldData.history || []), historyEvent]
-        });
+        const history = [...(oldData.history || []), historyEvent];
+        finalUpdates[isPreBooking ? 'originalNumberData.history' : 'history'] = history;
+
+        await doc.ref.update(finalUpdates);
 
         return true;
     } catch (error: any) {

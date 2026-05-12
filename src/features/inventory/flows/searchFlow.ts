@@ -300,8 +300,8 @@ export function registerSearchFlow(router: CommandRouter) {
                 headers: ['Mobile', 'Sum', '2-Digit Sum', 'Status', 'RTP Date', 'Price'],
                 rows: results.map(num => [
                     num.mobile,
-                    calculateDigitSum(num.mobile),
                     num.sum,
+                    calculateDigitSum(num.mobile),
                     num.status,
                     num.rtpDate ? format(num.rtpDate.toDate(), 'dd-MM-yyyy') : 'N/A',
                     num.salePrice

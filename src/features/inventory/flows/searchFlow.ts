@@ -304,7 +304,7 @@ export function registerSearchFlow(router: CommandRouter) {
                     num.sum,
                     num.status,
                     num.rtpDate ? format(num.rtpDate.toDate(), 'dd-MM-yyyy') : 'N/A',
-                    `₹${num.salePrice}`
+                    num.salePrice
                 ])
             });
 

@@ -9,11 +9,12 @@ const SEARCH_STAGES = {
     ADV_SEARCH_MENU: 'ADV_SEARCH_MENU',
     AWAIT_CRITERIA_VAL: 'AWAIT_CRITERIA_VAL',
     AWAIT_MUST_CONTAINS: 'AWAIT_MUST_CONTAINS',
+    AWAIT_QUERY_TEMPLATE: 'AWAIT_QUERY_TEMPLATE',
 } as const;
 
 type SearchSession = {
     stage: keyof typeof SEARCH_STAGES;
-    type?: 'Advanced' | 'MustContains';
+    type?: 'Advanced' | 'MustContains' | 'QueryAdvanced';
     criteria: AdvancedSearchCriteria;
     currentSetting?: keyof AdvancedSearchCriteria;
     page: number;
@@ -48,6 +49,7 @@ export async function startSearchFlow(bot: TelegramBot, chatId: number) {
         reply_markup: {
             inline_keyboard: [
                 [{ text: '🔍 Advanced Search', callback_data: 'search_type_adv' }],
+                [{ text: '📋 Query Advanced Search', callback_data: 'search_type_query' }],
                 [{ text: '🔢 Must Contains (Digits Only)', callback_data: 'search_type_must' }],
                 [cancelBtn]
             ]
@@ -70,6 +72,48 @@ function getCriteriaMenu(criteria: AdvancedSearchCriteria) {
     rows.push([{ text: '✅ Apply Search', callback_data: 'search_apply' }]);
     rows.push([cancelBtn]);
     return { inline_keyboard: rows };
+}
+
+function getAdvancedQueryTemplate(): string {
+    return `StartWith = 
+Anywhere = 
+EndWith = 
+MustContain = 
+NotContain = 
+OnlyContain = 
+TotalSum = 
+DigitRoot = 
+MaxRepeat = 
+MinPrice = 
+MaxPrice = `;
+}
+
+function parseAdvancedQueryTemplate(text: string): AdvancedSearchCriteria {
+    const lines = text.split('\n');
+    const criteria: AdvancedSearchCriteria = {};
+
+    for (const line of lines) {
+        const [key, ...valParts] = line.trim().split('=');
+        if (!key || valParts.length === 0) continue;
+        const value = valParts.join('=').trim();
+        if (!value) continue;
+
+        switch (key.trim().toLowerCase()) {
+            case 'startwith': criteria.startWith = value; break;
+            case 'anywhere': criteria.anywhere = value; break;
+            case 'endwith': criteria.endWith = value; break;
+            case 'mustcontain': criteria.mustContain = value; break;
+            case 'notcontain': criteria.notContain = value; break;
+            case 'onlycontain': criteria.onlyContain = value; break;
+            case 'totalsum': criteria.total = value; break;
+            case 'digitroot': criteria.sum = value; break;
+            case 'maxrepeat': criteria.maxContain = value; break;
+            case 'minprice': criteria.minPrice = value; break;
+            case 'maxprice': criteria.maxPrice = value; break;
+        }
+    }
+
+    return criteria;
 }
 
 export function registerSearchFlow(router: CommandRouter) {
@@ -102,6 +146,19 @@ export function registerSearchFlow(router: CommandRouter) {
             }
             await performSearch(bot, chatId, { onlyContain: digits.replace(/,/g, '') });
             clearSession(chatId, 'searchNumbers');
+        } else if (session.stage === 'AWAIT_QUERY_TEMPLATE') {
+            const criteria = parseAdvancedQueryTemplate(msg.text);
+            if (Object.keys(criteria).length === 0) {
+                await bot.sendMessage(chatId, "⚠️ No search criteria found in the template. Please fill at least one field.");
+                return;
+            }
+            session.criteria = criteria;
+            session.page = 0;
+            setSession(chatId, 'searchNumbers', session);
+            await performSearch(bot, chatId, criteria);
+            // We keep the session for pagination, but update stage
+            session.stage = 'ADV_SEARCH_MENU'; 
+            setSession(chatId, 'searchNumbers', session);
         }
     });
 
@@ -118,6 +175,18 @@ export function registerSearchFlow(router: CommandRouter) {
             await bot.sendMessage(chatId, "*Advanced Search*\nConfigure your filters:", {
                 parse_mode: 'Markdown',
                 reply_markup: getCriteriaMenu(session.criteria)
+            });
+        } else if (type === 'query') {
+            session.stage = 'AWAIT_QUERY_TEMPLATE';
+            session.type = 'QueryAdvanced';
+            setSession(chatId, 'searchNumbers', session);
+            const template = getAdvancedQueryTemplate();
+            await bot.sendMessage(chatId, "📋 *Query Advanced Search*\n\nCopy the template below, fill in your search parameters, and send it back:", {
+                parse_mode: 'Markdown'
+            });
+            await bot.sendMessage(chatId, `\`\`\`\n${template}\n\`\`\``, {
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: [[cancelBtn]] }
             });
         } else {
             session.stage = 'AWAIT_MUST_CONTAINS';

@@ -218,3 +218,12 @@ export type DealerRecord = {
 };
 
 export type NewDealerData = Omit<DealerRecord, 'id' | 'createdAt' | 'createdBy'>;
+
+export type BasicPremiumVendorRecord = {
+  id: string;
+  name: string;
+  createdAt: Timestamp;
+  createdBy: string;
+};
+
+export type NewBasicPremiumVendorData = Omit<BasicPremiumVendorRecord, 'id' | 'createdAt' | 'createdBy'>;

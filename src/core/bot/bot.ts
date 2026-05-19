@@ -15,6 +15,7 @@ import { registerCOCPFeature } from '../../features/cocp';
 import { registerHistoryFeature } from '../../features/history';
 import { registerLocationsFeature } from '../../features/locations';
 import { registerDealerFeature } from '../../features/dealer';
+import { registerBasicPremiumFeature } from '../../features/basicPremiumNumbers';
 import { registerDeletedFeature } from '../../features/deleted';
 import { initRemindersFeature } from '../../features/reminders';
 
@@ -41,6 +42,7 @@ export function initializeBot(): TelegramBot {
         registerHistoryFeature(commandRouter);
         registerLocationsFeature(commandRouter);
         registerDealerFeature(commandRouter);
+        registerBasicPremiumFeature(commandRouter);
         registerDeletedFeature(commandRouter);
         initRemindersFeature(commandRouter);
 

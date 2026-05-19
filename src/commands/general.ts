@@ -36,6 +36,8 @@ export function registerGeneralCommands(router: CommandRouter) {
             callbackData = 'sim_locations_start';
         } else if (chatId === env.TG_GROUP_DEALER_PURCHASES) {
             callbackData = 'dealer_purchases_start';
+        } else if (chatId === env.TG_GROUP_BASIC_PREMIUM_NUMBERS) {
+            callbackData = 'bp_start';
         } else if (chatId === env.TG_GROUP_DELETED_NUMBERS) {
             callbackData = 'deleted_numbers_start';
         }

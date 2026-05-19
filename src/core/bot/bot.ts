@@ -17,6 +17,7 @@ import { registerLocationsFeature } from '../../features/locations';
 import { registerDealerFeature } from '../../features/dealer';
 import { registerBasicPremiumFeature } from '../../features/basicPremiumNumbers';
 import { registerDeletedFeature } from '../../features/deleted';
+import { registerCategoriesFeature } from '../../features/categories';
 import { initRemindersFeature } from '../../features/reminders';
 
 let bot: TelegramBot | null = null;
@@ -44,6 +45,7 @@ export function initializeBot(): TelegramBot {
         registerDealerFeature(commandRouter);
         registerBasicPremiumFeature(commandRouter);
         registerDeletedFeature(commandRouter);
+        registerCategoriesFeature(commandRouter);
         initRemindersFeature(commandRouter);
 
         // Start listening for commands

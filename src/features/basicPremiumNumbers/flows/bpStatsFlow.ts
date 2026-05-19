@@ -41,7 +41,7 @@ export function registerBPStatsFlow(router: CommandRouter) {
             
             text += `📝 *Total Records:* ${stats.totalRecords}\n`;
             text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
-            text += `📋 *Inventory Records (Details):*\n`;
+            text += `📋 *Sales Records (Details):*\n`;
 
             if (stats.records && stats.records.length > 0) {
                 stats.records.slice(0, 50).forEach((r: any, idx: number) => {

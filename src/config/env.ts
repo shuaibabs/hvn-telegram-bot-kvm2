@@ -29,6 +29,7 @@ const envSchema = z.object({
     TG_GROUP_WORK_REMINDERS: z.string().optional(),
     TG_GROUP_COCP: z.string().optional(),
     TG_GROUP_DELETED_NUMBERS: z.string().optional(),
+    TG_GROUP_CATEGORIES: z.string().optional(),
     TG_MASTER_CHANNEL: z.string().optional(),
 });
 
@@ -56,6 +57,7 @@ export const GROUPS = {
     WORK_REMINDERS: env.TG_GROUP_WORK_REMINDERS || '',
     COCP: env.TG_GROUP_COCP || '',
     DELETED_NUMBERS: env.TG_GROUP_DELETED_NUMBERS || '',
+    CATEGORIES: env.TG_GROUP_CATEGORIES || '',
     MASTER_CHANNEL: env.TG_MASTER_CHANNEL || '',
 };
 

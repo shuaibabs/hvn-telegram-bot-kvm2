@@ -167,44 +167,19 @@ export async function addBPVendor(data: NewBasicPremiumVendorData, creatorUid: s
 
 export async function getBPStats(vendorName?: string) {
     try {
-        // Fetch from basic, premium, sales, and deletes
-        const basicSnap = await db.collection('basic').get();
-        const premiumSnap = await db.collection('premium').get();
+        // Fetch from sales and payments only
         const salesSnap = await db.collection('basicPremiumSales').get();
-        const deletesSnap = await db.collection('basicPremiumDeletes').get();
-        
-        const basicItems = basicSnap.docs.map((d: any) => d.data() as NumberRecord);
-        const premiumItems = premiumSnap.docs.map((d: any) => d.data() as NumberRecord);
         const salesItems = salesSnap.docs.map((d: any) => d.data());
-        const deletesItems = deletesSnap.docs.map((d: any) => d.data());
         
-        let activeItems = [...basicItems, ...premiumItems];
+        let filteredSales = salesItems;
         if (vendorName) {
-            activeItems = activeItems.filter(i => i.purchaseFrom === vendorName);
+            filteredSales = salesItems.filter(i => i.dealerName === vendorName);
         }
 
-        // Compute totalBilled across active, sold, and deleted items
+        // Compute totalBilled across sold items only
         let totalBilled = 0;
-        
-        basicItems.forEach(i => {
-            if (!vendorName || i.purchaseFrom === vendorName) {
-                totalBilled += (Number(i.purchasePrice) || 0);
-            }
-        });
-        premiumItems.forEach(i => {
-            if (!vendorName || i.purchaseFrom === vendorName) {
-                totalBilled += (Number(i.purchasePrice) || 0);
-            }
-        });
-        salesItems.forEach(i => {
-            if (!vendorName || i.dealerName === vendorName) {
-                totalBilled += (Number(i.purchasePrice) || 0);
-            }
-        });
-        deletesItems.forEach(i => {
-            if (!vendorName || i.dealerName === vendorName) {
-                totalBilled += (Number(i.purchasePrice) || 0);
-            }
+        filteredSales.forEach(i => {
+            totalBilled += (Number(i.purchasePrice) || 0);
         });
         
         let paymentsQuery: any = db.collection('basicPremiumPayments');
@@ -220,11 +195,11 @@ export async function getBPStats(vendorName?: string) {
             totalBilled,
             totalPaid,
             amountRemaining: totalBilled - totalPaid,
-            totalRecords: activeItems.length,
-            records: activeItems.map(i => ({
+            totalRecords: filteredSales.length,
+            records: filteredSales.map(i => ({
                 mobile: i.mobile,
                 sum: i.sum,
-                vendorName: i.purchaseFrom,
+                vendorName: i.dealerName,
                 price: Number(i.purchasePrice) || 0
             }))
         };

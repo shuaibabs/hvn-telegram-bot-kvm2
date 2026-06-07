@@ -2,7 +2,7 @@ import { db } from '../../config/firebase';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { SaleRecord, NumberRecord, SalesVendorRecord, PaymentRecord } from '../../shared/types/data';
 import { logger } from '../../core/logger/logger';
-import { calculateDigitalRoot } from '../../shared/utils/utils';
+import { calculateDigitalRoot, matchesExactPlacement } from '../../shared/utils/utils';
 
 export type VendorSalesStats = {
     vendorName: string;
@@ -25,6 +25,7 @@ export type SalesSearchCriteria = {
     sum?: string;
     minPrice?: string;
     maxPrice?: string;
+    exactPlacement?: string;
 };
 
 /**
@@ -58,13 +59,14 @@ export const searchSalesNumbers = async (criteria: SalesSearchCriteria, employee
         const snapshot = await query.get();
         let sales = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as SaleRecord));
 
-        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice } = criteria;
+        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice, exactPlacement } = criteria;
 
         return sales.filter((sale: SaleRecord) => {
             const mobile = sale.mobile;
             if (startWith && !mobile.startsWith(startWith)) return false;
             if (endWith && !mobile.endsWith(endWith)) return false;
             if (anywhere && !mobile.includes(anywhere)) return false;
+            if (exactPlacement && !matchesExactPlacement(mobile, exactPlacement)) return false;
 
             if (mustContain) {
                 const digits = mustContain.split(',').map(d => d.trim()).filter(Boolean);
@@ -220,7 +222,8 @@ export const getVendorSalesStats = async (vendorName: string) => {
             })),
             payments: payments.map(p => ({
                 amount: p.amount,
-                paymentDate: (p.paymentDate as any).toDate()
+                paymentDate: (p.paymentDate as any).toDate(),
+                notes: p.notes || ''
             }))
         };
     } catch (error: any) {

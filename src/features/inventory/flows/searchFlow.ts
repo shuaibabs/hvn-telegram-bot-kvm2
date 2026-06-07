@@ -29,6 +29,7 @@ const criteriaLabels: Record<string, string> = {
     startWith: 'Start With',
     endWith: 'End With',
     anywhere: 'Anywhere',
+    exactPlacement: 'Exact Placement',
     mustContain: 'Must Contain',
     notContain: 'Not Contain',
     onlyContain: 'Only Contain',
@@ -63,7 +64,7 @@ export async function startSearchFlow(bot: TelegramBot, chatId: number) {
 function getCriteriaMenu(criteria: AdvancedSearchCriteria) {
     const rows = [];
     const keys: (keyof AdvancedSearchCriteria)[] = [
-        'startWith', 'anywhere', 'endWith', 'mustContain', 'notContain', 'onlyContain', 
+        'startWith', 'anywhere', 'exactPlacement', 'endWith', 'mustContain', 'notContain', 'onlyContain',
         'total', 'sum', 'maxContain', 'ownershipType', 'minPrice', 'maxPrice'
     ];
 

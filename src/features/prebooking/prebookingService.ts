@@ -2,6 +2,7 @@ import { db } from '../../config/firebase';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { PreBookingRecord, NumberRecord } from '../../shared/types/data';
 import { logger } from '../../core/logger/logger';
+import { matchesExactPlacement } from '../../shared/utils/utils';
 
 export type PrebookSearchCriteria = {
     startWith?: string;
@@ -14,6 +15,7 @@ export type PrebookSearchCriteria = {
     sum?: string;
     minPrice?: string;
     maxPrice?: string;
+    exactPlacement?: string;
 };
 
 /**
@@ -47,13 +49,14 @@ export const searchPrebookingNumbers = async (criteria: PrebookSearchCriteria, e
         const snapshot = await query.get();
         let prebookings = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as PreBookingRecord));
 
-        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice } = criteria;
+        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice, exactPlacement } = criteria;
 
         return prebookings.filter((pb: PreBookingRecord) => {
             const mobile = pb.mobile;
             if (startWith && !mobile.startsWith(startWith)) return false;
             if (endWith && !mobile.endsWith(endWith)) return false;
             if (anywhere && !mobile.includes(anywhere)) return false;
+            if (exactPlacement && !matchesExactPlacement(mobile, exactPlacement)) return false;
 
             if (mustContain) {
                 const digits = mustContain.split(',').map(d => d.trim()).filter(Boolean);

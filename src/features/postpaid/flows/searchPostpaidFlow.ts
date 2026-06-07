@@ -27,6 +27,7 @@ const criteriaLabels: Record<string, string> = {
     startWith: 'Start With',
     endWith: 'End With',
     anywhere: 'Anywhere',
+    exactPlacement: 'Exact Placement',
     mustContain: 'Must Contain',
     notContain: 'Not Contain',
     onlyContain: 'Only Contain',
@@ -64,7 +65,7 @@ export async function startSearchPostpaidFlow(bot: TelegramBot, chatId: number, 
 
 function getCriteriaMenu(criteria: any) {
     const rows = [];
-    const keys = ['startWith', 'anywhere', 'endWith', 'mustContain', 'notContain', 'onlyContain', 'total', 'sum', 'minPrice', 'maxPrice'];
+    const keys = ['startWith', 'anywhere', 'exactPlacement', 'endWith', 'mustContain', 'notContain', 'onlyContain', 'total', 'sum', 'minPrice', 'maxPrice'];
 
     for (const key of keys) {
         const val = criteria[key] || 'Not Set';
@@ -144,7 +145,9 @@ export function registerSearchPostpaidFlow(router: CommandRouter) {
         session.stage = 'AWAIT_CRITERIA_VAL';
         setSession(chatId, 'searchPostpaid', session);
 
-        await bot.sendMessage(chatId, `Enter value for *${criteriaLabels[key!]}*:\n(Type 'clear' to reset this field)`, {
+        await bot.sendMessage(chatId, key === 'exactPlacement'
+            ? "🎯 *Exact Digit Placement*\n\nSend a 10-position pattern. Put a digit where you want it fixed and `x` (or `_`) for any other position.\n\n*Example:* `9xxxx5xxxx` → 1st digit = 9, 6th digit = 5.\n(Type 'clear' to reset)"
+            : `Enter value for *${criteriaLabels[key!]}*:\n(Type 'clear' to reset this field)`, {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[cancelBtn]] }
         });

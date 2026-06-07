@@ -2,7 +2,7 @@ import { db } from '../../config/firebase';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { NumberRecord, NewNumberData } from '../../shared/types/data';
 import { numberRecordSchema } from '../../shared/utils/validation';
-import { calculateDigitalRoot } from '../../shared/utils/utils';
+import { calculateDigitalRoot, matchesExactPlacement } from '../../shared/utils/utils';
 import { logger } from '../../core/logger/logger';
 
 /**
@@ -479,6 +479,7 @@ export type AdvancedSearchCriteria = {
     ownershipType?: 'Partnership' | 'Individual' | 'all';
     minPrice?: string;
     maxPrice?: string;
+    exactPlacement?: string;
 };
 
 /**
@@ -527,12 +528,13 @@ export const advancedSearchNumbers = async (criteria: AdvancedSearchCriteria): P
     const snapshot = await query.get();
     let numbers = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as NumberRecord));
 
-    const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, maxContain, minPrice, maxPrice } = criteria;
+    const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, maxContain, minPrice, maxPrice, exactPlacement } = criteria;
 
     return numbers.filter((num: NumberRecord) => {
         if (startWith && !num.mobile.startsWith(startWith)) return false;
         if (endWith && !num.mobile.endsWith(endWith)) return false;
         if (anywhere && !num.mobile.includes(anywhere)) return false;
+        if (exactPlacement && !matchesExactPlacement(num.mobile, exactPlacement)) return false;
 
         if (mustContain) {
             const digits = mustContain.split(',').map(d => d.trim()).filter(Boolean);

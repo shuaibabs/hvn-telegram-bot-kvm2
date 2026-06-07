@@ -2,6 +2,7 @@ import { db } from '../../config/firebase';
 import { Timestamp } from 'firebase-admin/firestore';
 import { NumberRecord } from '../../shared/types/data';
 import { logger } from '../../core/logger/logger';
+import { matchesExactPlacement } from '../../shared/utils/utils';
 
 /**
  * Gets numbers where numberType is 'COCP' with optional employee filtering.
@@ -62,13 +63,14 @@ export const searchCOCPNumbers = async (criteria: any, employeeName?: string): P
 
         let numbers = [...invResults, ...pbResults];
 
-        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice } = criteria;
+        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice, exactPlacement } = criteria;
 
         return numbers.filter((num: NumberRecord) => {
             const mobile = num.mobile;
             if (startWith && !mobile.startsWith(startWith)) return false;
             if (endWith && !mobile.endsWith(endWith)) return false;
             if (anywhere && !mobile.includes(anywhere)) return false;
+            if (exactPlacement && !matchesExactPlacement(mobile, exactPlacement)) return false;
 
             if (mustContain) {
                 const digits = mustContain.split(',').map((d: string) => d.trim()).filter(Boolean);

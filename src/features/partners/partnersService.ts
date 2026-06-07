@@ -1,6 +1,7 @@
 import { db } from '../../config/firebase';
 import { NumberRecord } from '../../shared/types/data';
 import { logger } from '../../core/logger/logger';
+import { matchesExactPlacement } from '../../shared/utils/utils';
 
 /**
  * Gets numbers where ownershipType is 'Partnership' with optional employee filtering.
@@ -33,13 +34,14 @@ export const searchPartnershipNumbers = async (criteria: any, employeeName?: str
         const snapshot = await query.get();
         let numbers = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as NumberRecord));
 
-        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice } = criteria;
+        const { startWith, endWith, anywhere, mustContain, notContain, onlyContain, total, sum, minPrice, maxPrice, exactPlacement } = criteria;
 
         return numbers.filter((num: NumberRecord) => {
             const mobile = num.mobile;
             if (startWith && !mobile.startsWith(startWith)) return false;
             if (endWith && !mobile.endsWith(endWith)) return false;
             if (anywhere && !mobile.includes(anywhere)) return false;
+            if (exactPlacement && !matchesExactPlacement(mobile, exactPlacement)) return false;
 
             if (mustContain) {
                 const digits = mustContain.split(',').map((d: string) => d.trim()).filter(Boolean);

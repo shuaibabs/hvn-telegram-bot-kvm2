@@ -9,9 +9,11 @@ import { registerPrebookFlow } from './flows/prebookFlow';
 import { registerSearchFlow } from './flows/searchFlow';
 import { registerDetailNumberFlow } from './flows/detailNumberFlow';
 import { registerQuickAddNumberFlow } from './flows/quickAddNumberFlow';
+import { registerBulkActionsFlow } from './flows/bulkActionsFlow';
 
 export function registerInventoryFeature(router: CommandRouter) {
     registerInventoryMenu(router);
+    registerBulkActionsFlow(router);
     registerAddNumberFlow(router);
     registerUpdateStatusFlow(router);
     registerAssignToUserFlow(router);

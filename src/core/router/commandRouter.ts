@@ -1,5 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
-import { hasAnySession } from '../bot/sessionManager';
+import { hasAnySession, hasScopedSession } from '../bot/sessionManager';
 import { logger } from '../logger/logger';
 import { env } from '../../config/env';
 
@@ -80,6 +80,12 @@ export class CommandRouter {
         const startRegex = /^(?:\/start|start)$/i;
         const isStart = startRegex.test(text);
 
+        if (hasScopedSession(msg.chat.id) && !isStart) {
+            // Scoped flows own their text (including /cancel). Do not start a legacy
+            // group-wide flow while users have isolated previews open.
+            return;
+        }
+
         let matched = false;
 
         for (const cmd of this.commands) {
@@ -122,6 +128,11 @@ export class CommandRouter {
 
         const chatId = query.message?.chat.id.toString();
         const data = query.data;
+
+        if (query.message && hasScopedSession(query.message.chat.id) && !data.startsWith('parity_') && !['inventory_start', 'sim_locations_start'].includes(data)) {
+            await this.bot.answerCallbackQuery(query.id, { text: 'Finish or cancel the active bulk/location flows before opening another workflow.', show_alert: true });
+            return;
+        }
 
         for (const cb of this.callbacks) {
             let isMatch = false;

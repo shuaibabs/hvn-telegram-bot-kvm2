@@ -1,9 +1,8 @@
-import { getDueReminders } from './remindersService';
+import { getDueReminders, startSystemReminderMonitor } from './remindersService';
 import { broadcast } from '../broadcast/broadcastService';
-import { format } from 'date-fns';
 import { logger } from '../../core/logger/logger';
-import admin from 'firebase-admin';
 import * as cron from 'node-cron';
+import { custodyTasks, indiaDay, reminderDate } from '../../shared/utils/systemReminders';
 
 /**
  * Helper to wait for a specified duration
@@ -11,30 +10,18 @@ import * as cron from 'node-cron';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Broadcasts a message with automatic retry logic for 429 Rate Limit errors.
+ * The broadcast service retries individual failed parts without repeating delivered parts.
  */
-async function broadcastWithRetry(group: string, message: string, source: 'BOT' | 'UI' = 'BOT', maxRetries = 3) {
-    for (let i = 0; i < maxRetries; i++) {
-        const result = await broadcast(group, message, source);
-        if (result.success) return true;
-
-        // Check for Telegram 429 error
-        if (result.error?.includes('429')) {
-            // Extract seconds from: "ETEGRAM: 429 Too Many Requests: retry after 32"
-            const match = result.error.match(/retry after (\d+)/);
-            const waitSeconds = match ? parseInt(match[1]) : 30; // Default to 30s
-            
-            logger.warn(`⚠️ Rate limited by Telegram. Waiting ${waitSeconds}s before retry (Attempt ${i + 1}/${maxRetries})...`);
-            await sleep((waitSeconds + 2) * 1000); // Wait requested time + 2s buffer
-            continue; // Try again
-        }
-        
-        // Fatal or non-retryable error
-        logger.error(`❌ Non-retryable broadcast failure: ${result.error}`);
-        break; 
-    }
-    return false;
+async function broadcastReminder(group: string, message: string) {
+    const result = await broadcast(group, message, 'BOT');
+    if (!result.success) logger.error(`❌ Reminder broadcast failed: ${result.error}`);
+    return result.success;
 }
+
+const formatReminderDate = (value: Parameters<typeof reminderDate>[0]) => reminderDate(value)!.toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long', year: 'numeric'
+});
+let processing = false;
 
 /**
  * Extracts a 10-digit mobile number from a string
@@ -46,9 +33,14 @@ function extractMobile(text: string): string | null {
 
 /**
  * Fetches due reminders and broadcasts them in grouped summaries to Telegram.
- * Groups common tasks (Safe Custody, Pre-bookings) to avoid notification spam.
+ * Groups custody and pre-booking tasks into summaries.
  */
 export async function processDueReminders() {
+    if (processing) {
+        logger.warn('Reminder check already running; skipping overlapping cycle.');
+        return;
+    }
+    processing = true;
     try {
         const dueReminders = await getDueReminders();
         
@@ -60,7 +52,7 @@ export async function processDueReminders() {
         logger.info(`Processing ${dueReminders.length} due reminders...`);
 
         // Categorize reminders
-        const safeCustodyGroups: Record<string, string[]> = {}; // Date String -> Mobile Numbers
+        const custodyGroups: Record<string, Record<string, Set<string>>> = {};
         const prebookedRtpList: string[] = [];
         const generalReminders: any[] = [];
 
@@ -68,23 +60,22 @@ export async function processDueReminders() {
             const taskId = reminder.taskId || '';
             const taskName = reminder.taskName || '';
 
-            if (taskId.startsWith('cocp-safecustody-')) {
-                const dueDate = reminder.dueDate instanceof admin.firestore.Timestamp 
-                    ? reminder.dueDate.toDate() 
-                    : new Date(reminder.dueDate);
-                const dateKey = format(dueDate, 'PPP');
-                const mobile = extractMobile(taskName);
+            const custodyTask = custodyTasks.find(task => taskId.startsWith(task.prefix));
+            if (custodyTask) {
+                const dateKey = indiaDay(reminder.dueDate)!;
+                const mobile = reminder.mobile || extractMobile(taskName);
                 
                 if (mobile) {
-                    if (!safeCustodyGroups[dateKey]) safeCustodyGroups[dateKey] = [];
-                    safeCustodyGroups[dateKey].push(mobile);
+                    const groups = custodyGroups[custodyTask.label] ||= {};
+                    if (!groups[dateKey]) groups[dateKey] = new Set();
+                    groups[dateKey].add(`\`${mobile}\` — Account: ${reminder.accountName || 'N/A'}`);
                 } else {
                     generalReminders.push(reminder);
                 }
             } else if (taskId.startsWith('prebooked-rtp-')) {
-                const mobile = extractMobile(taskName);
+                const mobile = reminder.mobile || extractMobile(taskName);
                 if (mobile) {
-                    prebookedRtpList.push(mobile);
+                    prebookedRtpList.push(`\`${mobile}\` — Account: ${reminder.accountName || 'N/A'}`);
                 } else {
                     generalReminders.push(reminder);
                 }
@@ -93,26 +84,28 @@ export async function processDueReminders() {
             }
         });
 
-        // 1. Safe Custody Category
-        const dateKeys = Object.keys(safeCustodyGroups).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-        if (dateKeys.length > 0) {
-            let scMessage = `📅 **Safe Custody Dates Arrived (COCP)**\n\n`;
+        // 1. COCP custody categories
+        for (const task of custodyTasks) {
+            const groups = custodyGroups[task.label] || {};
+            const dateKeys = Object.keys(groups).sort();
+            if (!dateKeys.length) continue;
+            let scMessage = `📅 **${task.label} Dates Arrived (COCP)**\n\n`;
             for (const dateKey of dateKeys) {
-                const mobiles = safeCustodyGroups[dateKey];
-                scMessage += `*Date: ${dateKey}*\n`;
-                mobiles.forEach(m => scMessage += `• \`${m}\`\n`);
+                const mobiles = groups[dateKey];
+                scMessage += `**Date: ${formatReminderDate(new Date(`${dateKey}T00:00:00+05:30`))}**\n`;
+                mobiles.forEach(m => scMessage += `• ${m}\n`);
                 scMessage += `\n`;
             }
-            await broadcastWithRetry('WORK_REMINDERS', scMessage, 'BOT');
+            await broadcastReminder('WORK_REMINDERS', scMessage);
             await sleep(2000);
         }
 
         // 2. Pre-booked Category
         if (prebookedRtpList.length > 0) {
             let pbMessage = `📅 **Pre-Booked Numbers now RTP**\n\n`;
-            prebookedRtpList.forEach(m => pbMessage += `• \`${m}\`\n`);
+            prebookedRtpList.forEach(m => pbMessage += `• ${m}\n`);
             pbMessage += `\nPlease update these records in the dashboard.`;
-            await broadcastWithRetry('WORK_REMINDERS', pbMessage, 'BOT');
+            await broadcastReminder('WORK_REMINDERS', pbMessage);
             await sleep(2000);
         }
 
@@ -120,17 +113,19 @@ export async function processDueReminders() {
         if (generalReminders.length > 0) {
             let genMessage = `📅 **Other Pending Reminders**\n\n`;
             generalReminders.forEach((r, idx) => {
-                const dueDate = r.dueDate instanceof admin.firestore.Timestamp ? r.dueDate.toDate() : new Date(r.dueDate);
                 const assignedTo = Array.isArray(r.assignedTo) ? r.assignedTo.join(', ') : r.assignedTo;
                 genMessage += `${idx + 1}. **${r.taskName}**\n`;
+                genMessage += `   - Account: ${r.accountName || 'N/A'}\n`;
                 genMessage += `   - Assigned to: ${assignedTo}\n`;
-                genMessage += `   - Due: ${format(dueDate, 'PPP')}\n\n`;
+                genMessage += `   - Due: ${formatReminderDate(r.dueDate)}\n\n`;
             });
-            await broadcastWithRetry('WORK_REMINDERS', genMessage, 'BOT');
+            await broadcastReminder('WORK_REMINDERS', genMessage);
         }
 
     } catch (error: any) {
         logger.error(`[ERROR] Reminder processing cycle failed: ${error.message}`);
+    } finally {
+        processing = false;
     }
 }
 
@@ -147,6 +142,10 @@ export function startReminderScheduler() {
     }, {
         timezone: "Asia/Kolkata"
     });
+
+    // New or newly arrived dates must reach the UI/Telegram queue without an open admin dashboard.
+    // The daily consolidated summary remains at 07:00 IST.
+    startSystemReminderMonitor();
 
     // Initial check after startup (30 seconds delay to allow system to settle)
     setTimeout(async () => {

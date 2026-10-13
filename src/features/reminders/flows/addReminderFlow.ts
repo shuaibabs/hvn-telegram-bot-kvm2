@@ -157,7 +157,7 @@ export function registerAddReminderFlow(router: CommandRouter) {
         }
 
         try {
-            await addReminder(session.data);
+            const reminder = await addReminder(session.data);
             await bot.sendMessage(chatId, "✅ *Reminder Saved Successfully!*", { parse_mode: 'Markdown' });
 
             // Log activity
@@ -165,7 +165,7 @@ export function registerAddReminderFlow(router: CommandRouter) {
             await logActivity(bot, {
                 employeeName: creator,
                 action: 'Added Reminder',
-                description: `Created task "${session.data.taskName}" assigned to ${session.data.assignedTo?.join(', ')}`,
+                description: `Created task "${session.data.taskName}" assigned to ${session.data.assignedTo?.join(', ')}. Account: ${reminder.accountName}.`,
                 source: 'BOT',
                 createdBy: creator,
                 groupName: 'WORK_REMINDERS'

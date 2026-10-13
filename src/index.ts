@@ -2,6 +2,7 @@ import { initializeBot } from './core/bot/bot';
 import { startServer } from './core/server/server';
 import { logger } from './core/logger/logger';
 import { startReminderScheduler } from './features/reminders/reminderScheduler';
+import { startActivityNotificationWorker } from './features/activities/activityNotificationWorker';
 
 // Global error handlers to prevent process exit on unhandled rejections
 process.on('unhandledRejection', (reason: any, promise) => {
@@ -27,6 +28,7 @@ async function main() {
 
         // Start Periodic Tasks
         startReminderScheduler();
+        startActivityNotificationWorker();
 
     } catch (error: any) {
         logger.error("Failed to start the bot or server: " + error.message);

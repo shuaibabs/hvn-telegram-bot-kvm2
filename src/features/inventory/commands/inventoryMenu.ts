@@ -19,6 +19,8 @@ export const inventoryMenuCommand = async (bot: TelegramBot, chatId: number | st
     const keyboard = [
         [{ text: '➕ Add Number', callback_data: 'inv_add' }, { text: '⚡ Quick Add', callback_data: 'inv_quick_add' }],
         [{ text: '🔄 Update Status', callback_data: 'inv_upd_stat' }],
+        [{ text: '🔄 Bulk Status Change', callback_data: 'parity_start_status' }],
+        [{ text: '🤝 Bulk Ownership Change', callback_data: 'parity_start_ownership' }],
         [{ text: '💰 Mark as Sold', callback_data: 'inv_sold' }],
         [{ text: '📖 Prebook Number', callback_data: 'inv_prebook' }],
         [{ text: '🔍 Search Numbers', callback_data: 'inv_search' }],
@@ -62,7 +64,7 @@ export function registerInventoryMenu(router: CommandRouter) {
 
     // Handle "Update Status" button click
     router.registerCallback('inv_upd_stat', Guard.registeredOnlyCallback(bot, async (query) => {
-        await startUpdateStatusFlow(bot, query.message!.chat.id);
+        await startUpdateStatusFlow(bot, query.message!.chat.id, query.from.id);
     }), [env.TG_GROUP_INVENTORY || '']);
 
     // Handle "Mark as Sold" button click

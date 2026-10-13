@@ -2,21 +2,34 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { env, GROUPS } from '../../config/env';
 import { logger } from '../../core/logger/logger';
+import { splitTelegramMessage } from '../../shared/utils/telegramMessages';
 
 const botToken = env.TELEGRAM_BOT_TOKEN;
 const bot = new TelegramBot(botToken); // Dedicated broadcast instance
 
 /**
- * Escapes characters for HTML parse mode.
+ * Space multi-part sends and retry Telegram's rate-limit responses.
  */
-function escapeHTML(text: string): string {
-    if (!text) return '';
-    return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Retry only the failed part/destination so delivered messages are not duplicated.
+async function sendPart(chatId: string, part: ReturnType<typeof splitTelegramMessage>[number]) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            await bot.sendMessage(chatId, part.text, {
+                entities: part.entities,
+                disable_web_page_preview: true
+            });
+            return;
+        } catch (error: any) {
+            const details = error.response?.body;
+            const message = details?.description || error.description || error.message || 'Unknown Telegram Error';
+            if (!(details?.error_code === 429 || message.includes('429')) || attempt === 2) throw error;
+            const seconds = details?.parameters?.retry_after || Number(message.match(/retry after (\d+)/)?.[1]) || 30;
+            logger.warn(`⚠️ Telegram rate limit for ${chatId}; retrying part after ${seconds}s.`);
+            await sleep((seconds + 1) * 1000);
+        }
+    }
 }
 
 /**
@@ -25,19 +38,11 @@ function escapeHTML(text: string): string {
 export async function broadcast(
     groupInput: string,
     message: string,
-    source: 'BOT' | 'UI' = 'BOT'
+    source: 'BOT' | 'UI' = 'BOT',
+    delivery?: { progress: Record<string, number>; onPartSent: (chatId: string, completedParts: number) => Promise<void> }
 ): Promise<{ success: boolean; error?: string }> {
 
-    const escapedSource = escapeHTML(source);
-    const escapedGroupInput = escapeHTML(groupInput);
-    
-    // Note: message might contain <b>/<i> tags already if formatted by the caller, 
-    // but in our case server.ts passes a string with **. 
-    // Let's assume the caller provides plain text or we clean it up.
-    // For now, let's transform ** to <b>.
-    const htmlMessage = message.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-
-    const formattedMasterMsg = `<b>🔔 Master Alert</b>\n<b>Source:</b> ${escapedSource}\n<b>Action Type:</b> ${escapedGroupInput}\n\n${htmlMessage}`;
+    const masterPrefix = `**🔔 Master Alert**\n**Source:** ${source}\n**Action Type:** ${groupInput}\n\n`;
 
     // 1. Determine Target Group ID
     let targetGroupId = groupInput;
@@ -47,33 +52,36 @@ export async function broadcast(
 
     const results: string[] = [];
 
-    try {
-        // 2. Send to Dedicated Group (if valid)
-        if (targetGroupId && targetGroupId.startsWith('-')) {
-            await bot.sendMessage(targetGroupId, htmlMessage, {
-                parse_mode: 'HTML',
-                disable_web_page_preview: true
-            });
-            results.push(`Sent to Group: ${targetGroupId}`);
-        }
-
-        // 3. Mirror to Master Channel (if configured)
-        const masterId = GROUPS.MASTER_CHANNEL;
-        if (masterId && masterId.startsWith('-')) {
-            await bot.sendMessage(masterId, formattedMasterMsg, {
-                parse_mode: 'HTML',
-                disable_web_page_preview: true
-            });
-            results.push(`Mirrored to Master Channel: ${masterId}`);
-        }
-
-        logger.info(`📡 Broadcast completed: ${JSON.stringify(results)}`);
-        return { success: true };
-
-    } catch (err: any) {
-        const errMsg = err.description || err.message || 'Unknown Telegram Error';
-        logger.error(`❌ Broadcast Error: ${errMsg}`);
-        return { success: false, error: errMsg };
+    const targets: { id: string; prefix: string; label: string }[] = [];
+    if (targetGroupId?.startsWith('-')) targets.push({ id: targetGroupId, prefix: '', label: 'Sent to Group' });
+    const masterId = GROUPS.MASTER_CHANNEL;
+    if (masterId?.startsWith('-') && masterId !== targetGroupId) {
+        targets.push({ id: masterId, prefix: masterPrefix, label: 'Mirrored to Master Channel' });
     }
+    if (!targets.length) return { success: false, error: `No Telegram destination configured for ${groupInput}` };
+    if (!message.trim()) return { success: false, error: 'Cannot broadcast an empty message' };
+
+    const errors: string[] = [];
+    for (const target of targets) {
+        try {
+            const parts = splitTelegramMessage(message, target.prefix);
+            const completed = delivery?.progress[target.id] || 0;
+            for (let index = completed; index < parts.length; index++) {
+                if (index > completed) await sleep(3100);
+                await sendPart(target.id, parts[index]);
+                if (delivery) {
+                    delivery.progress[target.id] = index + 1;
+                    await delivery.onPartSent(target.id, index + 1);
+                }
+            }
+            results.push(`${target.label}: ${target.id} (${parts.length} part(s))`);
+        } catch (err: any) {
+            const errMsg = err.response?.body?.description || err.description || err.message || 'Unknown Telegram Error';
+            errors.push(`${target.id}: ${errMsg}`);
+            logger.error(`❌ Broadcast Error for ${target.id}: ${errMsg}`);
+        }
+    }
+    if (results.length) logger.info(`📡 Broadcast completed: ${JSON.stringify(results)}`);
+    return errors.length ? { success: false, error: errors.join('; ') } : { success: true };
 }
 

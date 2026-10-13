@@ -7,6 +7,7 @@ import { validateNumbersExistence, updateNumbersStatusBatch } from '../inventory
 import { logActivity } from '../../activities/activityService';
 import { CommandRouter } from '../../../core/router/commandRouter';
 import { formatToDDMMYYYY, parseFromDDMMYYYY } from '../../../shared/utils/dateUtils';
+import { startBulkStatusFlow } from './bulkActionsFlow';
 
 const UPDATE_STATUS_STAGES = {
     AWAIT_UPDATE_TYPE: 'AWAIT_UPDATE_TYPE',
@@ -22,6 +23,7 @@ const UPDATE_STATUS_STAGES = {
 } as const;
 
 type UpdateStatusSession = {
+    ownerId?: number;
     stage: keyof typeof UPDATE_STATUS_STAGES;
     data: {
         numbers: string[];
@@ -32,9 +34,10 @@ type UpdateStatusSession = {
 
 const cancelBtn = { text: '❌ Cancel', callback_data: 'update_status_cancel' };
 
-export async function startUpdateStatusFlow(bot: TelegramBot, chatId: number) {
+export async function startUpdateStatusFlow(bot: TelegramBot, chatId: number, ownerId?: number) {
     setSession(chatId, 'updateStatus', {
         stage: 'AWAIT_UPDATE_TYPE',
+        ownerId,
         data: {
             numbers: [],
             updates: {}
@@ -192,6 +195,15 @@ export function registerUpdateStatusFlow(router: CommandRouter) {
         if (!session || session.stage !== 'AWAIT_UPDATE_TYPE') return;
 
         const type = query.data?.split('_').pop() as any;
+        if (session.ownerId && session.ownerId !== query.from.id) {
+            await bot.answerCallbackQuery(query.id, { text: 'This status workflow belongs to another user.', show_alert: true });
+            return;
+        }
+        if (type === 'RTP') {
+            clearSession(chatId, 'updateStatus');
+            await startBulkStatusFlow(bot, chatId, query.from);
+            return;
+        }
         session.data.updateType = type;
         session.stage = 'AWAIT_NUMBERS';
         setSession(chatId, 'updateStatus', session);

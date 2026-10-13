@@ -12,6 +12,8 @@ export async function locationsMenuCommand(bot: TelegramBot, chatId: number, use
         reply_markup: {
             inline_keyboard: [
                 [{ text: '📍 List SIM Locations', callback_data: 'locations_list' }],
+                [{ text: '🔍 Search / Select / Copy Locations', callback_data: 'parity_start_locations' }],
+                [{ text: '📅 Bulk Check-In Date', callback_data: 'parity_start_checkin' }],
                 [{ text: '✏️ CheckIn / Edit Location', callback_data: 'locations_edit' }],
                 [{ text: '🔍 View Details', callback_data: 'locations_details' }]
             ]

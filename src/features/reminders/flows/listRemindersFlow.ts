@@ -5,7 +5,8 @@ import { getPendingReminders, markReminderAsDone } from '../remindersService';
 import { isAdmin, getUserProfile } from '../../../core/auth/permissions';
 import { CommandRouter } from '../../../core/router/commandRouter';
 import { logActivity } from '../../activities/activityService';
-import { formatToDDMMYYYY } from '../../../shared/utils/dateUtils';
+import { indiaDay } from '../../../shared/utils/systemReminders';
+import { splitTelegramMessage } from '../../../shared/utils/telegramMessages';
 
 const PAGE_SIZE = 5;
 
@@ -34,15 +35,16 @@ async function showRemindersPage(bot: TelegramBot, chatId: number, page: number,
             return;
         }
 
-        let text = `📅 *Pending Reminders (${total})*\n`;
-        text += `_Page ${page + 1} of ${Math.ceil(total / PAGE_SIZE)}_\n`;
+        let text = `📅 **Pending Reminders (${total})**\n`;
+        text += `Page ${page + 1} of ${Math.ceil(total / PAGE_SIZE)}\n`;
         text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
         const inline_keyboard: TelegramBot.InlineKeyboardButton[][] = [];
 
         reminders.forEach((r: any, i: number) => {
-            const date = formatToDDMMYYYY(r.dueDate);
-            text += `${offset + i + 1}. *${r.taskName}*\n`;
+            const date = indiaDay(r.dueDate)?.split('-').reverse().join('/') || 'N/A';
+            text += `${offset + i + 1}. **${r.taskName}**\n`;
+            text += `   🏢 Account: ${r.accountName || 'N/A'}\n`;
             text += `   📅 Due: ${date} | 👤: ${r.assignedTo.join(', ')}\n\n`;
             
             inline_keyboard.push([{ text: `✅ Done: ${r.taskName.substring(0, 15)}...`, callback_data: `rem_done_${r.id}` }]);
@@ -55,10 +57,13 @@ async function showRemindersPage(bot: TelegramBot, chatId: number, page: number,
         if (navButtons.length > 0) inline_keyboard.push(navButtons);
         inline_keyboard.push([{ text: '❌ Close', callback_data: 'rem_list_close' }]);
 
-        await bot.sendMessage(chatId, text, {
-            parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard }
-        });
+        const parts = splitTelegramMessage(text);
+        for (let index = 0; index < parts.length; index++) {
+            await bot.sendMessage(chatId, parts[index].text, {
+                entities: parts[index].entities,
+                ...(index === parts.length - 1 ? { reply_markup: { inline_keyboard } } : {})
+            });
+        }
     } catch (error: any) {
         logger.error(`Error in showRemindersPage: ${error.message}`);
         await bot.sendMessage(chatId, `❌ Error: ${error.message}`);

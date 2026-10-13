@@ -72,3 +72,12 @@ export function hasSession(userId: number, flow: string): boolean {
 export function hasAnySession(userId: number): boolean {
     return (sessions.get(userId)?.size ?? 0) > 0;
 }
+
+// New multi-user flows are scoped to both chat and sender; legacy flows retain their keys.
+export function hasScopedSession(chatId: number): boolean {
+    return [...(sessions.get(chatId)?.keys() || [])].some(flow => flow.startsWith('parity:'));
+}
+
+export function hasLegacySession(chatId: number): boolean {
+    return [...(sessions.get(chatId)?.keys() || [])].some(flow => !flow.startsWith('parity:'));
+}
